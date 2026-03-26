@@ -14,7 +14,7 @@ DB_USER = quote_plus(os.getenv("DB_USER", "root"))
 DB_PASSWORD = quote_plus(os.getenv("DB_PASSWORD", ""))
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "3306")
-DB_NAME = os.getenv("DB_NAME", "claude_test")
+DB_NAME = os.getenv("DB_NAME", "school_management_db")
 
 DATABASE_URL = (
     f"mysql+aiomysql://{DB_USER}:{DB_PASSWORD}"

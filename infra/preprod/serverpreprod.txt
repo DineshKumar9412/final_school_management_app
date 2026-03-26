@@ -1,0 +1,91 @@
+docker build -t school-app:latest ./school_app
+docker compose up -d app
+
+### Install Docker First
+sudo apt update
+sudo apt upgrade -y
+sudo apt install -y apt-transport-https ca-certificates curl software-properties-common lsb-release
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] \
+  https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
+  | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io
+docker --version
+
+sudo apt update
+sudo apt install -y docker-compose-plugin
+docker compose version
+
+
+### Install Jenkins
+sudo apt update && sudo apt upgrade -y
+sudo apt install openjdk-11-jdk -y
+curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key | sudo tee \
+  /usr/share/keyrings/jenkins-keyring.asc > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/" | sudo tee /etc/apt/sources.list.d/jenkins.list > /dev/null
+sudo apt update
+sudo apt install jenkins -y
+sudo systemctl start jenkins
+sudo systemctl enable jenkins
+sudo systemctl status jenkins
+
+## how to login
+http://<SERVER_IP>:8080
+sudo cat /var/lib/jenkins/secrets/initialAdminPassword
+username : pre-prod
+password : Diny@9412
+
+# Memory
+sudo sysctl -w vm.max_map_count=524288
+sudo sysctl -w fs.file-max=131072
+
+### jenkins user access
+sudo usermod -aG docker jenkins
+sudo systemctl restart jenkins
+
+### Run school app in docker 
+git clone https://github.com/DineshKumar9412/final_school_management_api.git
+
+cd final_school_management_api
+
+vi .env
+## ad file
+
+sudo docker build -t school-app:latest ./school_app
+
+sudo docker compose up -d school-app
+
+HOW TO RUN DOCKER COMPOSE
+cd infra/preprod
+
+sudo docker compose up -d
+
+### install sonarqube
+http://13.233.174.10:9000
+
+## create a sonar-key
+squ_dc7b1a4e3f8943719467a3f2492ce0c544e07ed6
+
+vi sonar-project.properties
+
+sonar.projectKey=school-api
+sonar.projectName=School API
+sonar.projectVersion=1.0
+
+sonar.sources=school_app
+sonar.sourceEncoding=UTF-8
+sonar.python.version=3.10
+
+sonar.exclusions=**/__pycache__/**,**/*.pyc,**/venv/**,**/.venv/**
+
+sonar.host.url=http://13.233.174.10:9000
+sonar.login=squ_dc7b1a4e3f8943719467a3f2492ce0c544e07ed6
+
+## Sample Code To Test
+sudo docker run --rm \
+  -e SONAR_HOST_URL="http://13.233.174.10:9000" \
+  -e SONAR_LOGIN="squ_dc7b1a4e3f8943719467a3f2492ce0c544e07ed6" \
+  -v "/home/ubuntu/final_school_management_api:/usr/src" \
+  sonarsource/sonar-scanner-cli

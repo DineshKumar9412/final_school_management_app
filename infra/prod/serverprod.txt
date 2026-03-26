@@ -1,0 +1,2 @@
+docker build -t school-app:latest ./school_app
+docker compose up -d app

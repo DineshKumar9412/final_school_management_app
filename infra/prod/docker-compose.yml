@@ -1,0 +1,113 @@
+services:
+  school-app:
+    image: school-app:latest
+    container_name: school-app-prod
+    env_file:
+      - ../../.env
+    ports:
+      - "8000:8000"
+    restart: always
+    mem_limit: 2g
+    cpus: "2.0"
+
+  loki:
+    image: grafana/loki:3.6.0
+    container_name: loki-prod
+    command: -config.file=/etc/loki/loki-config.yml
+    user: "0:0"
+    volumes:
+      - loki-data:/loki
+      - ./loki-config.yml:/etc/loki/loki-config.yml
+    restart: always
+    mem_limit: 4g
+    cpus: "2.0"
+
+  promtail:
+    image: grafana/promtail:3.6.0
+    container_name: promtail-prod
+    user: "0:0"
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - /var/log:/var/log
+      - ./promtail-config.yml:/etc/promtail/promtail-config.yml
+    depends_on:
+      - loki
+    restart: always
+    mem_limit: 512m
+    cpus: "0.5"
+
+  prometheus:
+    image: prom/prometheus:v2.49.1
+    container_name: prometheus-prod
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=30d"
+    ports:
+      - "9090:9090"
+    restart: always
+    mem_limit: 4g
+    cpus: "2.0"
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.1
+    container_name: node-exporter-prod
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    command:
+      - "--path.rootfs=/host"
+    restart: always
+    mem_limit: 256m
+    cpus: "0.25"
+
+  grafana:
+    image: grafana/grafana:10.2.3
+    container_name: grafana-prod
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    depends_on:
+      - loki
+      - prometheus
+    restart: always
+    mem_limit: 1500m
+    cpus: "1.0"
+
+  monitoring-agent:
+    build:
+      context: ../monitoring-agent
+      dockerfile: Dockerfile
+    container_name: monitoring-agent-prod
+    environment:
+      ENV: prod
+      PROMETHEUS_URL: http://prometheus:9090
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      ALERT_FROM: ${SMTP_USER}
+      ALERT_TO: ${ALERT_TO}
+      POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-60}
+      ALERT_COOLDOWN_SECONDS: ${ALERT_COOLDOWN_SECONDS:-300}
+      THRESH_CPU: ${THRESH_CPU:-85}
+      THRESH_MEMORY: ${THRESH_MEMORY:-85}
+      THRESH_DISK: ${THRESH_DISK:-90}
+      THRESH_HTTP_ERROR: ${THRESH_HTTP_ERROR:-5}
+      THRESH_LATENCY_P95: ${THRESH_LATENCY_P95:-2.0}
+    depends_on:
+      - prometheus
+    restart: always
+    mem_limit: 256m
+    cpus: "0.25"
+
+volumes:
+  loki-data:
+  grafana-data:
+  prometheus-data:

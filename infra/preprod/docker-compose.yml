@@ -1,0 +1,132 @@
+services:
+  school-app:
+    image: school-app:latest
+    container_name: school-app-preprod
+    env_file:
+      - ../../.env
+    ports:
+      - "8001:8000"
+    restart: always
+
+  loki:
+    image: grafana/loki:3.6.0
+    container_name: loki-preprod
+    command: -config.file=/etc/loki/loki-config.yml
+    user: "0:0"
+    volumes:
+      - loki-data:/loki
+      - ./loki-config.yml:/etc/loki/loki-config.yml
+    restart: always
+
+  promtail:
+    image: grafana/promtail:3.6.0
+    container_name: promtail-preprod
+    user: "0:0"
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - /var/log:/var/log
+      - ./promtail-config.yml:/etc/promtail/promtail-config.yml
+    depends_on:
+      - loki
+    restart: always
+
+  prometheus:
+    image: prom/prometheus:v2.49.1
+    container_name: prometheus-preprod
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+    ports:
+      - "9090:9090"
+    restart: always
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.1
+    container_name: node-exporter-preprod
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+    command:
+      - "--path.rootfs=/host"
+    restart: always
+
+  grafana:
+    image: grafana/grafana:10.2.3
+    container_name: grafana-preprod
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+    depends_on:
+      - loki
+    restart: always
+
+  postgres-sonar:
+    image: postgres:15
+    container_name: postgres-sonar-preprod
+    environment:
+      POSTGRES_USER: sonar
+      POSTGRES_PASSWORD: sonar
+      POSTGRES_DB: sonarqube
+    volumes:
+      - sonar-db:/var/lib/postgresql/data
+    restart: always
+
+  sonarqube:
+    image: sonarqube:lts-community
+    container_name: sonarqube-preprod
+    depends_on:
+      - postgres-sonar
+    ports:
+      - "9000:9000"
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://postgres-sonar:5432/sonarqube
+      SONAR_JDBC_USERNAME: sonar
+      SONAR_JDBC_PASSWORD: sonar
+      SONAR_ES_JAVA_OPTS: "-Xms1g -Xmx1g"
+      SONAR_WEB_JAVAOPTS: "-Xms512m -Xmx512m"
+    volumes:
+      - sonarqube-data:/opt/sonarqube/data
+      - sonarqube-extensions:/opt/sonarqube/extensions
+      - sonarqube-logs:/opt/sonarqube/logs
+    restart: always
+
+  monitoring-agent:
+    build:
+      context: ../monitoring-agent
+      dockerfile: Dockerfile
+    container_name: monitoring-agent-preprod
+    environment:
+      ENV: preprod
+      PROMETHEUS_URL: http://prometheus:9090
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      ALERT_FROM: ${SMTP_USER}
+      ALERT_TO: ${ALERT_TO}
+      POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-60}
+      ALERT_COOLDOWN_SECONDS: ${ALERT_COOLDOWN_SECONDS:-300}
+      THRESH_CPU: ${THRESH_CPU:-85}
+      THRESH_MEMORY: ${THRESH_MEMORY:-85}
+      THRESH_DISK: ${THRESH_DISK:-90}
+      THRESH_HTTP_ERROR: ${THRESH_HTTP_ERROR:-5}
+      THRESH_LATENCY_P95: ${THRESH_LATENCY_P95:-2.0}
+    depends_on:
+      - prometheus
+    restart: always
+
+volumes:
+  loki-data:
+  grafana-data:
+  prometheus-data:
+  sonar-db:
+  sonarqube-data:
+  sonarqube-extensions:
+  sonarqube-logs:

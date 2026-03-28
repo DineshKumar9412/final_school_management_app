@@ -11,9 +11,13 @@ from schemas.school_group_schemas import (
     SchoolGroupUpdateRequest,
     SchoolGroupResponse,
 )
+from security.dependencies import validate_session
 from response.result import Result
 
-school_group_router = APIRouter(tags=["SCHOOL GROUP"])
+school_group_router = APIRouter(
+    tags=["SCHOOL GROUP"],
+    dependencies=[Depends(validate_session)],
+)
 
 CACHE_TTL = 300  # seconds
 

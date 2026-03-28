@@ -1,72 +1,9 @@
 # models/user_models.py
-from sqlalchemy import String, Integer, BigInteger, Boolean, Date, Enum, ForeignKey, Text, func
+from sqlalchemy import String, Integer, BigInteger, Boolean, Date, Enum, ForeignKey, Text, func, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database.base import Base
 from datetime import date, datetime
 from typing import Optional
-
-
-class School(Base):
-    __tablename__ = "school"
-
-    school_id:    Mapped[int]           = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    school_name:  Mapped[str]           = mapped_column(String(200), nullable=False)
-    code:         Mapped[Optional[str]] = mapped_column(String(50),  unique=True, nullable=True)
-    email:        Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
-    phone:        Mapped[Optional[str]] = mapped_column(String(30),  nullable=True)
-    website:      Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    address_line1: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
-    address_line2: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
-    city:         Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    state:        Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    country:      Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    postal_code:  Mapped[Optional[str]] = mapped_column(String(20),  nullable=True)
-    status:       Mapped[Optional[str]] = mapped_column(Enum("active", "inactive"), default="active", nullable=True)
-    created_at:   Mapped[datetime]      = mapped_column(server_default=func.current_timestamp(), nullable=False)
-    updated_at:   Mapped[datetime]      = mapped_column(
-        server_default=func.current_timestamp(),
-        onupdate=func.current_timestamp(),
-        nullable=False,
-    )
-
-    groups: Mapped[list["SchoolGroup"]] = relationship(
-        "SchoolGroup",
-        back_populates="school",
-        cascade="all, delete-orphan",
-    )
-
-    def __repr__(self) -> str:
-        return f"<School school_id={self.school_id} school_name={self.school_name!r}>"
-
-
-class SchoolGroup(Base):
-    __tablename__ = "school_group"
-
-    school_group_id: Mapped[int]           = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    school_id:       Mapped[int]           = mapped_column(
-        BigInteger,
-        ForeignKey("school.school_id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    group_name:    Mapped[str]           = mapped_column(String(200), nullable=False)
-    description:   Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    start_date:    Mapped[Optional[date]] = mapped_column(Date, nullable=True)
-    end_date:      Mapped[Optional[date]] = mapped_column(Date, nullable=True)
-    validity_days: Mapped[Optional[int]]  = mapped_column(Integer, nullable=True)
-    status:        Mapped[Optional[str]]  = mapped_column(
-        Enum("draft", "active", "inactive", "archived"), default="draft", nullable=True
-    )
-    created_at: Mapped[datetime] = mapped_column(server_default=func.current_timestamp(), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        server_default=func.current_timestamp(),
-        onupdate=func.current_timestamp(),
-        nullable=False,
-    )
-
-    school: Mapped["School"] = relationship("School", back_populates="groups")
-
-    def __repr__(self) -> str:
-        return f"<SchoolGroup school_group_id={self.school_group_id} group_name={self.group_name!r}>"
 
 
 class DeviceRegistration(Base):
@@ -102,10 +39,10 @@ class Session(Base):
     __tablename__ = "session"
 
     id:          Mapped[int]           = mapped_column(Integer, primary_key=True, autoincrement=True)
-    device_id:   Mapped[int]           = mapped_column(
+    device_id:   Mapped[Optional[int]]  = mapped_column(
         Integer,
-        ForeignKey("device_registration.id", ondelete="CASCADE"),
-        nullable=False,
+        ForeignKey("device_registration.id", ondelete="SET NULL"),
+        nullable=True,
     )
     user_id:     Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     role:        Mapped[Optional[str]] = mapped_column(String(20),  nullable=True)
@@ -125,3 +62,80 @@ class Session(Base):
 
     def __repr__(self) -> str:
         return f"<Session id={self.id} client_key={self.client_key!r} user_id={self.user_id}>"
+
+
+class RoleCreation(Base):
+    __tablename__ = "role_creation"
+
+    role_id:    Mapped[int]           = mapped_column(Integer, primary_key=True)
+    role_name:  Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    is_active:  Mapped[Optional[bool]]= mapped_column(Boolean, default=True, nullable=True)
+    created_at: Mapped[datetime]      = mapped_column(server_default=func.current_timestamp(), nullable=False)
+    updated_at: Mapped[datetime]      = mapped_column(
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+        nullable=False,
+    )
+
+    def __repr__(self) -> str:
+        return f"<RoleCreation role_id={self.role_id} role_name={self.role_name!r}>"
+
+
+class Employee(Base):
+    __tablename__ = "employee"
+
+    id:         Mapped[int]           = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    emp_id:     Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    role_id:    Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("role_creation.role_id"), nullable=True)
+    first_name: Mapped[str]           = mapped_column(String(100), nullable=False)
+    last_name:  Mapped[str]           = mapped_column(String(100), nullable=False)
+    mobile:     Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    email:      Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    password:   Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    is_active:  Mapped[Optional[bool]]= mapped_column(Boolean, default=True, nullable=True)
+    created_at: Mapped[datetime]      = mapped_column(server_default=func.current_timestamp(), nullable=False)
+    updated_at: Mapped[datetime]      = mapped_column(
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+        nullable=False,
+    )
+
+    role: Mapped[Optional["RoleCreation"]] = relationship("RoleCreation", lazy="joined")
+
+    def __repr__(self) -> str:
+        return f"<Employee id={self.id} mobile={self.mobile!r}>"
+
+
+class Student(Base):
+    __tablename__ = "student"
+
+    student_id:  Mapped[int]           = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    school_id:   Mapped[int]           = mapped_column(BigInteger, nullable=False)
+    first_name:  Mapped[str]           = mapped_column(String(100), nullable=False)
+    last_name:   Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    phone:       Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    status:      Mapped[Optional[str]] = mapped_column(Enum("active", "inactive"), default="active", nullable=True)
+    created_at:  Mapped[datetime]      = mapped_column(server_default=func.current_timestamp(), nullable=False)
+    updated_at:  Mapped[datetime]      = mapped_column(
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+        nullable=False,
+    )
+
+    def __repr__(self) -> str:
+        return f"<Student student_id={self.student_id} phone={self.phone!r}>"
+
+
+class OtpVerification(Base):
+    __tablename__ = "otp_verification"
+
+    id:         Mapped[int]      = mapped_column(Integer, primary_key=True, autoincrement=True)
+    identifier: Mapped[str]      = mapped_column(String(50), nullable=False, index=True)
+    otp:        Mapped[str]      = mapped_column(String(6), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(nullable=False)
+    is_used:    Mapped[bool]     = mapped_column(Boolean, default=False, nullable=False)
+    attempts:   Mapped[int]      = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.current_timestamp(), nullable=False)
+
+    def __repr__(self) -> str:
+        return f"<OtpVerification id={self.id} identifier={self.identifier!r} is_used={self.is_used}>"

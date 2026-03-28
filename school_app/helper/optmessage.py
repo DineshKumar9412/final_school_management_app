@@ -1,5 +1,4 @@
 # helper/optmessage.py
-from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from datetime import datetime, timedelta
@@ -29,8 +28,8 @@ async def _get_active_otp(identifier: str, db: AsyncSession):
 
 async def _send_otp_logic(identifier: str, db: AsyncSession, fcb_token: str) -> str:
     """
-    Core send OTP logic — reused by send and resend.
-    Invalidates any existing OTP, creates a new one, returns the OTP.
+    Invalidates any existing OTP, creates a new one, sends via FCM.
+    Returns the OTP string.
     """
     existing = await _get_active_otp(identifier, db)
     if existing:
@@ -49,45 +48,35 @@ async def _send_otp_logic(identifier: str, db: AsyncSession, fcb_token: str) -> 
 
     try:
         send_push_notification(device_token=fcb_token, otp=otp)
-    except Exception as E:
-        db.rollback()
+    except Exception:
+        await db.rollback()
+
     return otp
 
 
-async def _verify_otp_logic(identifier: str, otp: str, db: AsyncSession) -> bool:
+async def _verify_otp_logic(identifier: str, otp: str, db: AsyncSession) -> tuple[bool, int, str]:
     """
-    Core verify OTP logic.
-    Returns True on success, raises HTTPException on failure.
+    Verifies OTP for the given identifier.
+    Returns (True, 200, "OTP verified.") on success.
+    Returns (False, code, message) on failure.
     """
     otp_record = await _get_active_otp(identifier, db)
 
     if not otp_record:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No active OTP found. Please request a new one."
-        )
+        return False, 404, "No active OTP found. Please request a new one."
 
     if otp_record.attempts >= MAX_ATTEMPTS:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Max attempts reached. Please request a new OTP."
-        )
+        return False, 429, "Max attempts reached. Please request a new OTP."
 
     if otp_record.expires_at < datetime.utcnow():
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail="OTP has expired. Please request a new one."
-        )
+        return False, 410, "OTP has expired. Please request a new one."
 
     if otp_record.otp != otp:
         otp_record.attempts += 1
         await db.commit()
         remaining = MAX_ATTEMPTS - otp_record.attempts
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid OTP. {remaining} attempts remaining."
-        )
+        return False, 400, f"Invalid OTP. {remaining} attempts remaining."
 
     otp_record.is_used = True
     await db.commit()
-    return True
+    return True, 200, "OTP verified."

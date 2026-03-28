@@ -1,11 +1,13 @@
 # main.py
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from sqladmin import Admin
 from database.session import engine
 from middleware.cors import setup_cors
 from middleware.decryption import DecryptionMiddleware
 from middleware.encryption import EncryptionMiddleware
 from middleware.monitoring import MonitoringMiddleware, metrics_endpoint, loki_logger
+from security.dependencies import SessionAuthError
+from response.result import Result
 # routers.py
 from api.routers import ROUTERS
 
@@ -14,6 +16,11 @@ app = FastAPI(title="FastAPI Production App")
 # API Routers
 for router, prefix in ROUTERS:
     app.include_router(router, prefix=prefix)
+
+# ── Exception handler for session auth errors ──────────────
+@app.exception_handler(SessionAuthError)
+async def session_auth_error_handler(request: Request, exc: SessionAuthError):
+    return Result(code=exc.code, message=exc.message, extra={}).http_response()
 
 # Middleware Setup
 # 1️⃣ CORS

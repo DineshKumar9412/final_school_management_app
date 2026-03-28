@@ -102,3 +102,31 @@ class AuthLoginResponse(BaseModel):
     valid_till: datetime
 
     model_config = {"from_attributes": True}
+
+
+# ─────────────────────────────────────────────
+# Web Login
+# ─────────────────────────────────────────────
+
+class WebLoginRequest(BaseModel):
+    platform:      str = Field("web", description="Must be 'web'")
+    mobile_number: str = Field(..., description="Employee mobile number")
+    password:      str = Field(..., description="Employee password")
+
+
+# ─────────────────────────────────────────────
+# Android Login
+# ─────────────────────────────────────────────
+
+class AndroidLoginRequest(BaseModel):
+    mobile_number: str = Field(..., description="User mobile number")
+
+
+# ─────────────────────────────────────────────
+# OTP Verify
+# ─────────────────────────────────────────────
+
+class OtpVerifyRequest(BaseModel):
+    mobile_number: str            = Field(..., description="Mobile number used during login")
+    otp:           str            = Field(..., description="6-digit OTP received via FCM")
+    role_choice:   Optional[str]  = Field(None, description="'student' or role name — required only when 202 was returned")

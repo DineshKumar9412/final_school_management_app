@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, Response, Cookie
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 
@@ -10,6 +10,7 @@ from database.session import get_db
 from database.redis_cache import cache
 from models.user_models import DeviceRegistration, Session
 from schemas.user_schemas import DeviceRegisterRequest, DeviceRegisterResponse
+from security.dependencies import validate_session
 from response.result import Result
 
 auth_router = APIRouter(tags=["AUTH"])
@@ -134,3 +135,30 @@ async def device_register(
         message="Device registered successfully." if is_new else "Session resumed.",
         extra=DeviceRegisterResponse(client_key=client_key, is_new=is_new).model_dump(),
     ).http_response()
+
+
+# ─────────────────────────────────────────────
+# POST /api/auth/logout
+# ─────────────────────────────────────────────
+
+@auth_router.post("/logout", summary="Logout — clears session user_id, role, device_id")
+async def logout(
+    response: Response,
+    session: dict = Depends(validate_session),
+    db: AsyncSession = Depends(get_db),
+):
+    client_key = session["client_key"]
+
+    async with db.begin():
+        await db.execute(
+            update(Session)
+            .where(Session.client_key == client_key)
+            .values(user_id=None, role=None, device_id=None)
+        )
+
+    await cache.delete(f"session:{client_key}")
+
+    # Clear web cookie
+    response.delete_cookie("client_key")
+
+    return Result(code=200, message="Logged out successfully.", extra={}).http_response()

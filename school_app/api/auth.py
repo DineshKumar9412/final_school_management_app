@@ -1,8 +1,8 @@
 # api/auth.py
 import uuid
 from datetime import datetime, timedelta
-
-from fastapi import APIRouter, Depends, Response
+from typing import Annotated, Optional
+from fastapi import APIRouter, Depends, Response, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 
@@ -15,8 +15,9 @@ from response.result import Result
 
 auth_router = APIRouter(tags=["AUTH"])
 
+SESSION_ADMIN_TTL_DAYS = 1
 SESSION_TTL_DAYS = 30
-CACHE_TTL = 300  # 5 minutes
+CACHE_TTL = 300  
 
 
 # ─────────────────────────────────────────────
@@ -63,18 +64,7 @@ async def device_register(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Device Registration & Session Flow
-    ────────────────────────────────────
-    1. Upsert device record.
-    2. Check for an existing active session on this device.
-    3. If session exists:
-       a. FCM token unchanged → return existing client_key.
-       b. FCM token changed   → update FCM token, return same client_key.
-    4. If no session → create a new anonymous session, return new client_key.
-    5. Web clients: client_key is also set as an HttpOnly cookie.
-    """
-
+    
     async with db.begin():
         # ── Step 1: Upsert device ─────────────────────────────
         device = await _upsert_device(db, payload)
@@ -105,20 +95,13 @@ async def device_register(
             client_key = str(uuid.uuid4())
             new_session = Session(
                 device_id=device.id,
-                user_id=None,                          # anonymous until login
+                user_id=None,                      
                 role=None,
                 client_key=client_key,
-                valid_till=now + timedelta(days=SESSION_TTL_DAYS),
+                valid_till=now + timedelta(days=SESSION_ADMIN_TTL_DAYS),
             )
             db.add(new_session)
             is_new = True
-
-    # ── Step 5: Cache the client_key → device_id mapping ──────
-    await cache.set(
-        f"session:{client_key}",
-        {"device_id": device.device_id, "user_id": None},
-        expire=CACHE_TTL,
-    )
 
     # ── Web clients: set HttpOnly cookie ───────────────────────
     if payload.os.lower() == "web":
@@ -127,7 +110,7 @@ async def device_register(
             value=client_key,
             httponly=True,
             samesite="lax",
-            max_age=SESSION_TTL_DAYS * 86400,
+            max_age=SESSION_ADMIN_TTL_DAYS * 86400,
         )
 
     return Result(
@@ -143,22 +126,37 @@ async def device_register(
 
 @auth_router.post("/logout", summary="Logout — clears session user_id, role, device_id")
 async def logout(
+    request: Request,
     response: Response,
-    session: dict = Depends(validate_session),
     db: AsyncSession = Depends(get_db),
+    client_key: Annotated[
+        Optional[str],
+        Header(description="Client key from device registration (Android/TV). Web clients send it automatically via cookie.")
+    ] = None,
+    platform: Optional[str] = None
 ):
-    client_key = session["client_key"]
+    client_key = client_key or request.cookies.get("client_key")
 
-    async with db.begin():
-        await db.execute(
-            update(Session)
-            .where(Session.client_key == client_key)
-            .values(user_id=None, role=None, device_id=None)
-        )
+    if not client_key:
+        return Result(code=401, message="client_key required.", extra={}).http_response()
 
+    result = await db.execute(
+        select(Session).where(Session.client_key == client_key)
+    )
+    session = result.scalar_one_or_none()
+
+    if session is None:
+        return Result(code=401, message="Invalid session.", extra={}).http_response()
+
+    await db.execute(
+        update(Session)
+        .where(Session.client_key == client_key)
+        .values(user_id=None, role=None)
+    )
+    await db.commit()
     await cache.delete(f"session:{client_key}")
 
-    # Clear web cookie
-    response.delete_cookie("client_key")
+    if platform == "web":
+        response.delete_cookie("client_key")
 
     return Result(code=200, message="Logged out successfully.", extra={}).http_response()

@@ -109,7 +109,6 @@ class AuthLoginResponse(BaseModel):
 # ─────────────────────────────────────────────
 
 class WebLoginRequest(BaseModel):
-    platform:      str = Field("web", description="Must be 'web'")
     mobile_number: str = Field(..., description="Employee mobile number")
     password:      str = Field(..., description="Employee password")
 

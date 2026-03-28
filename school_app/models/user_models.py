@@ -109,12 +109,13 @@ class Employee(Base):
 class Student(Base):
     __tablename__ = "student"
 
-    student_id:  Mapped[int]           = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    school_id:   Mapped[int]           = mapped_column(BigInteger, nullable=False)
-    first_name:  Mapped[str]           = mapped_column(String(100), nullable=False)
-    last_name:   Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    phone:       Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
-    status:      Mapped[Optional[str]] = mapped_column(Enum("active", "inactive"), default="active", nullable=True)
+    student_id:       Mapped[int]           = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    school_id:        Mapped[int]           = mapped_column(BigInteger, nullable=False)
+    student_roll_id:  Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    first_name:       Mapped[str]           = mapped_column(String(100), nullable=False)
+    last_name:        Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    phone:            Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    status:           Mapped[Optional[str]] = mapped_column(Enum("active", "inactive"), default="active", nullable=True)
     created_at:  Mapped[datetime]      = mapped_column(server_default=func.current_timestamp(), nullable=False)
     updated_at:  Mapped[datetime]      = mapped_column(
         server_default=func.current_timestamp(),

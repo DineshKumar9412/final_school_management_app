@@ -1,12 +1,13 @@
 # api/login.py
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import select, update 
 from datetime import datetime
+from typing import Annotated, Optional
 
 from database.session import get_db
 from database.redis_cache import cache
-from models.user_models import Employee, Student, Session
+from models.user_models import Employee, Student, Session, DeviceRegistration
 from schemas.user_schemas import WebLoginRequest, AndroidLoginRequest, OtpVerifyRequest
 from helper.optmessage import _send_otp_logic, _verify_otp_logic
 from security.dependencies import validate_session
@@ -19,23 +20,24 @@ login_router = APIRouter(tags=["LOGIN"])
 # Helper: force-logout other active sessions
 # ─────────────────────────────────────────────
 
-async def _force_logout_user(user_id: str, current_client_key: str, db: AsyncSession):
-    """
-    Clears any other active session tied to this user_id.
-    Must be called inside an existing db.begin() block.
-    """
+async def _force_logout_user(user_id: str, db: AsyncSession):
     result = await db.execute(
         select(Session).where(
-            Session.user_id    == user_id,
-            Session.valid_till >  datetime.utcnow(),
-            Session.client_key != current_client_key,
+            Session.user_id == user_id,
         )
     )
-    for s in result.scalars().all():
-        s.user_id   = None
-        s.role      = None
-        s.device_id = None
-        await cache.delete(f"session:{s.client_key}")
+    session = result.scalar_one_or_none()
+    
+    if not session:
+        return
+    
+    await db.execute(
+            update(Session)
+            .where(Session.id == session.id)
+            .values(user_id=None, role=None)
+        )
+    await db.commit()
+    await cache.delete(f"session:{session.client_key}")
 
 
 # ─────────────────────────────────────────────
@@ -44,12 +46,23 @@ async def _force_logout_user(user_id: str, current_client_key: str, db: AsyncSes
 
 @login_router.post("/web", summary="Web admin login (mobile + password)")
 async def web_login(
+    request: Request,
     payload: WebLoginRequest,
-    session: dict = Depends(validate_session),
     db: AsyncSession = Depends(get_db),
+    client_key: Annotated[Optional[str], Header(description="Client key from device registration (Android/TV). Web clients send it automatically via cookie.")] = None,
 ):
-    if payload.platform != "web":
-        return Result(code=400, message="Invalid platform. Expected 'web'.", extra={}).http_response()
+    client_key = client_key or request.cookies.get("client_key")
+
+    if not client_key:
+        return Result(code=401, message="client_key required.", extra={}).http_response()
+    
+    result = await db.execute(
+        select(Session).where(Session.client_key == client_key)
+    )
+    session = result.scalar_one_or_none()
+
+    if session is None:
+        return Result(code=401, message="Invalid session.", extra={}).http_response()
 
     # Find active employee by mobile
     emp_result = await db.execute(
@@ -59,28 +72,26 @@ async def web_login(
         )
     )
     employee = emp_result.scalar_one_or_none()
-
+  
     if employee is None or employee.password != payload.password:
         return Result(code=401, message="Invalid credentials or insufficient permissions.", extra={}).http_response()
 
-    # Role must be admin
-    role = employee.role  # joined
+    role = employee.role
     if not role or not role.role_name or role.role_name.lower() != "admin":
-        return Result(code=401, message="Invalid credentials or insufficient permissions.", extra={}).http_response()
+        return Result(code=401, message="Admin only Allowed.", extra={}).http_response()
 
     user_id = str(employee.id)
 
-    async with db.begin():
-        await _force_logout_user(user_id, session["client_key"], db)
+    await _force_logout_user(user_id, db)
 
-        sess_result = await db.execute(
-            select(Session).where(Session.client_key == session["client_key"])
-        )
-        db_session = sess_result.scalar_one()
-        db_session.user_id = user_id
-        db_session.role    = "admin"
+    await db.execute(
+        update(Session)
+        .where(Session.client_key == client_key)
+        .values(user_id=user_id, role="admin")
+    )
+    await db.commit()
 
-    await cache.delete(f"session:{session['client_key']}")
+    await cache.delete(f"session:{client_key}")
 
     return Result(
         code=200,
@@ -95,13 +106,24 @@ async def web_login(
 
 @login_router.post("/android", summary="Android login — sends OTP via FCM")
 async def android_login(
+    request: Request,
     payload: AndroidLoginRequest,
-    session: dict = Depends(validate_session),
     db: AsyncSession = Depends(get_db),
+    client_key: Annotated[Optional[str], Header(description="Client key from device registration (Android/TV). Web clients send it automatically via cookie.")] = None,
 ):
-    # FCM token comes directly from enriched session
-    device_info = session.get("device_id")
-    fcm_token   = device_info.get("fcm_token") if device_info else None
+    client_key = client_key or request.cookies.get("client_key")
+
+    if not client_key:
+        return Result(code=401, message="client_key required.", extra={}).http_response()
+
+    stmt = (
+        select(DeviceRegistration.fcm_token)
+        .join(Session, DeviceRegistration.id == Session.device_id)
+        .where(Session.client_key == client_key)
+    )
+
+    result = await db.execute(stmt)
+    fcm_token = result.scalar_one_or_none()
 
     if not fcm_token:
         return Result(code=400, message="FCM token missing. Cannot send OTP.", extra={}).http_response()
@@ -124,21 +146,33 @@ async def android_login(
     )
     employee = emp_result.scalar_one_or_none()
 
-    # Validate employee role
     if employee:
-        role      = employee.role  # joined
+        role      = employee.role
         role_name = role.role_name.lower() if role and role.role_name else None
         if role_name == "admin":
-            return Result(code=401, message="Admin login is not allowed on mobile.", extra={}).http_response()
-    else:
-        role_name = None
+            employee = None
 
-    # Mobile found in both tables — ask user to choose
     if student and employee:
+        choices = [
+            {
+            "role": "student",
+            "id": student.student_id,
+            "roll_id": student.student_roll_id,
+            "fcm_token": fcm_token,
+            "mobile": payload.mobile_number
+            },
+            {
+            "role": role_name,
+            "id": employee.id,
+            "roll_id": employee.emp_id,
+            "fcm_token": fcm_token,
+            "mobile": payload.mobile_number
+            }
+            ]
         return Result(
             code=202,
             message="Multiple accounts found. Please choose your role.",
-            extra={"choices": ["student", role_name or "employee"]},
+            extra={"choices": choices},
         ).http_response()
 
     if student:
@@ -152,16 +186,44 @@ async def android_login(
     return Result(code=404, message="Mobile number not found.", extra={}).http_response()
 
 
+@login_router.post("/android/choice", summary="Multiple accounts found. Please choose your role")
+async def android_choice(
+    mobile: str,
+    fcm_token: str,
+    role_name: str,
+    db: AsyncSession = Depends(get_db),
+):
+    if role_name == "student":
+        await _send_otp_logic(mobile, db, fcm_token)
+        return Result(code=200, message="OTP sent successfully.", extra={"role": "student"}).http_response()
+
+    else:
+        await _send_otp_logic(mobile, db, fcm_token)
+        return Result(code=200, message="OTP sent successfully.", extra={"role": role_name}).http_response()
+
+
 # ─────────────────────────────────────────────
 # POST /api/auth/login/otp/verify
 # ─────────────────────────────────────────────
 
 @login_router.post("/otp/verify", summary="Verify OTP and complete Android login")
 async def verify_otp(
+    request: Request,
     payload: OtpVerifyRequest,
-    session: dict = Depends(validate_session),
     db: AsyncSession = Depends(get_db),
+    client_key: Annotated[Optional[str], Header(description="Client key from device registration (Android/TV). Web clients send it automatically via cookie.")] = None,
 ):
+    client_key = client_key or request.cookies.get("client_key")
+
+    if not client_key:
+        return Result(code=401, message="client_key required.", extra={}).http_response()
+
+    sess_result = await db.execute(
+        select(Session).where(Session.client_key == client_key)
+    )
+    if sess_result.scalar_one_or_none() is None:
+        return Result(code=401, message="Invalid session.", extra={}).http_response()
+
     success, code, message = await _verify_otp_logic(payload.mobile_number, payload.otp, db)
     if not success:
         return Result(code=code, message=message, extra={}).http_response()
@@ -188,17 +250,14 @@ async def verify_otp(
         role_obj = employee.role
         role     = role_obj.role_name.lower() if role_obj and role_obj.role_name else "employee"
 
-    async with db.begin():
-        await _force_logout_user(user_id, session["client_key"], db)
+    await db.execute(
+        update(Session)
+        .where(Session.client_key == client_key)
+        .values(user_id=user_id, role=role)
+    )
+    await db.commit()
 
-        sess_result = await db.execute(
-            select(Session).where(Session.client_key == session["client_key"])
-        )
-        db_session = sess_result.scalar_one()
-        db_session.user_id = user_id
-        db_session.role    = role
-
-    await cache.delete(f"session:{session['client_key']}")
+    await cache.delete(f"session:{client_key}")
 
     return Result(
         code=200,

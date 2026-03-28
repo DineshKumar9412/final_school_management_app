@@ -10,32 +10,14 @@ from database.session import get_db
 from database.redis_cache import cache
 from models.user_models import Session as SessionModel, DeviceRegistration, Employee, Student
 
-SESSION_CACHE_TTL = 300  # seconds
-
-
-# ─────────────────────────────────────────────
-# Custom auth exception (handled in main.py)
-# ─────────────────────────────────────────────
+SESSION_CACHE_TTL = 300 
 
 class SessionAuthError(Exception):
     def __init__(self, code: int, message: str):
         self.code    = code
         self.message = message
 
-
-# ─────────────────────────────────────────────
-# Build enriched session dict
-# ─────────────────────────────────────────────
-
 async def _build_session_info(session: SessionModel, db: AsyncSession) -> dict:
-    """Returns enriched session:
-    {
-        client_key, role, valid_till,
-        device_id: {id, fcm_token} | None,
-        user_id:   full user info  | None
-    }
-    """
-    # ── Device (id + fcm_token only) ──────────────────────────
     device_info = None
     if session.device_id is not None:
         dev_result = await db.execute(
@@ -81,23 +63,11 @@ async def _build_session_info(session: SessionModel, db: AsyncSession) -> dict:
         "user_id":    user_info,
     }
 
-
-# ─────────────────────────────────────────────
-# validate_session dependency
-# ─────────────────────────────────────────────
-
 async def validate_session(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    client_key: Annotated[Optional[str], Header(alias="client_key", description="Client key from device registration (Android/TV). Web clients send it automatically via cookie.")] = None,
+    client_key: Annotated[Optional[str], Header(description="Client key from device registration (Android/TV). Web clients send it automatically via cookie.")] = None,
 ) -> dict:
-    """
-    Validates client_key from:
-      - Header `client_key`  (Android / TV)
-      - Cookie `client_key`  (Web — set automatically after device/register)
-
-    Returns enriched session dict. Raises SessionAuthError on failure.
-    """
     client_key = client_key or request.cookies.get("client_key")
 
     if not client_key:
@@ -107,11 +77,10 @@ async def validate_session(
 
     # ── 1. Cache hit ───────────────────────────────────────────
     cached = await cache.get(cache_key)
-    if cached:
+    if cached and "valid_till" in cached:
         valid_till = datetime.fromisoformat(cached["valid_till"])
         if valid_till >= datetime.utcnow():
             return cached
-        # stale cache entry — fall through to DB check
 
     # ── 2. DB lookup ───────────────────────────────────────────
     result = await db.execute(
@@ -127,7 +96,7 @@ async def validate_session(
         await db.execute(
             update(SessionModel)
             .where(SessionModel.id == session.id)
-            .values(user_id=None, role=None, device_id=None)
+            .values(user_id=None, role=None)
         )
         await db.commit()
         await cache.delete(cache_key)

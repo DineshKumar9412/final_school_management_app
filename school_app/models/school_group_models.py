@@ -65,5 +65,7 @@ class SchoolGroup(Base):
         nullable=False,
     )
 
+    school: Mapped["School"] = relationship("School", back_populates="groups")
+
     def __repr__(self) -> str:
         return f"<SchoolGroup id={self.school_group_id} name={self.group_name!r} school_id={self.school_id}>"

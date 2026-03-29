@@ -15,7 +15,7 @@ from response.result import Result
 
 auth_router = APIRouter(tags=["AUTH"])
 
-SESSION_ADMIN_TTL_DAYS = 1
+SESSION_ADMIN_TTL_DAYS = 10
 SESSION_TTL_DAYS = 30
 CACHE_TTL = 300  
 

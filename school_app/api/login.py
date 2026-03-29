@@ -1,16 +1,18 @@
 # api/login.py
-from fastapi import APIRouter, Depends, Header, Request
+import uuid
+from fastapi import APIRouter, Depends, Header, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update 
-from datetime import datetime
+from sqlalchemy import select, update
+from datetime import datetime, timedelta
 from typing import Annotated, Optional
+
+SESSION_ADMIN_TTL_DAYS = 10
 
 from database.session import get_db
 from database.redis_cache import cache
 from models.user_models import Employee, Student, Session, DeviceRegistration
 from schemas.user_schemas import WebLoginRequest, AndroidLoginRequest, OtpVerifyRequest
 from helper.optmessage import _send_otp_logic, _verify_otp_logic
-from security.dependencies import validate_session
 from response.result import Result
 
 login_router = APIRouter(tags=["LOGIN"])
@@ -47,6 +49,7 @@ async def _force_logout_user(user_id: str, db: AsyncSession):
 @login_router.post("/web", summary="Web admin login (mobile + password)")
 async def web_login(
     request: Request,
+    response: Response,
     payload: WebLoginRequest,
     db: AsyncSession = Depends(get_db),
     client_key: Annotated[Optional[str], Header(description="Client key from device registration (Android/TV). Web clients send it automatically via cookie.")] = None,
@@ -62,7 +65,29 @@ async def web_login(
     session = result.scalar_one_or_none()
 
     if session is None:
-        return Result(code=401, message="Invalid session.", extra={}).http_response()
+        return Result(code=401, message="Invalid Client Key.", extra={}).http_response()
+
+    # Renew expired session with a new client_key
+    now = datetime.utcnow()
+
+    if session.valid_till < now:
+        new_client_key = str(uuid.uuid4())
+        new_valid_till = now + timedelta(days=SESSION_ADMIN_TTL_DAYS)
+        await db.execute(
+            update(Session)
+            .where(Session.client_key == client_key)
+            .values(client_key=new_client_key, valid_till=new_valid_till)
+        )
+        await db.commit()
+        await cache.delete(f"session:{client_key}")
+        client_key = new_client_key
+        response.set_cookie(
+            key="client_key",
+            value=client_key,
+            httponly=True,
+            samesite="lax",
+            max_age=SESSION_ADMIN_TTL_DAYS * 86400,
+        )
 
     # Find active employee by mobile
     emp_result = await db.execute(
@@ -115,6 +140,30 @@ async def android_login(
 
     if not client_key:
         return Result(code=401, message="client_key required.", extra={}).http_response()
+
+    # Check session exists and renew if expired
+    sess_result = await db.execute(
+        select(Session).where(Session.client_key == client_key)
+    )
+    session = sess_result.scalar_one_or_none()
+
+    if session is None:
+        return Result(code=401, message="Invalid Client Key.", extra={}).http_response()
+
+    now = datetime.utcnow()
+    renewed_client_key = None
+    if session.valid_till < now:
+        new_client_key    = str(uuid.uuid4())
+        new_valid_till    = now + timedelta(days=SESSION_ADMIN_TTL_DAYS)
+        await db.execute(
+            update(Session)
+            .where(Session.client_key == client_key)
+            .values(client_key=new_client_key, valid_till=new_valid_till)
+        )
+        await db.commit()
+        await cache.delete(f"session:{client_key}")
+        client_key        = new_client_key
+        renewed_client_key = new_client_key
 
     stmt = (
         select(DeviceRegistration.fcm_token)
@@ -169,19 +218,18 @@ async def android_login(
             "mobile": payload.mobile_number
             }
             ]
-        return Result(
-            code=202,
-            message="Multiple accounts found. Please choose your role.",
-            extra={"choices": choices},
-        ).http_response()
+        extra = {"choices": choices, **({"client_key": renewed_client_key} if renewed_client_key else {})}
+        return Result(code=202, message="Multiple accounts found. Please choose your role.", extra=extra).http_response()
 
     if student:
         await _send_otp_logic(payload.mobile_number, db, fcm_token)
-        return Result(code=200, message="OTP sent successfully.", extra={"role": "student"}).http_response()
+        extra = {"role": "student", **({"client_key": renewed_client_key} if renewed_client_key else {})}
+        return Result(code=200, message="OTP sent successfully.", extra=extra).http_response()
 
     if employee:
         await _send_otp_logic(payload.mobile_number, db, fcm_token)
-        return Result(code=200, message="OTP sent successfully.", extra={"role": role_name}).http_response()
+        extra = {"role": role_name, **({"client_key": renewed_client_key} if renewed_client_key else {})}
+        return Result(code=200, message="OTP sent successfully.", extra=extra).http_response()
 
     return Result(code=404, message="Mobile number not found.", extra={}).http_response()
 

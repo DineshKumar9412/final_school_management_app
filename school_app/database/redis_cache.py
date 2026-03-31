@@ -16,7 +16,7 @@ class RedisCache:
         self.host = host or os.getenv("REDIS_HOST", "127.0.0.1")
         self.port = port or int(os.getenv("REDIS_PORT", 6379))
         self.db = db or int(os.getenv("REDIS_DB", 0))
-        self.password = password or os.getenv("REDIS_PASSWORD")
+        self.password = password or os.getenv("REDIS_PASSWORD") or None
         self.decode_responses = decode_responses
 
         self.client = redis.Redis(

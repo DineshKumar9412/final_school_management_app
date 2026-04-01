@@ -1,25 +1,23 @@
 # security/valid_session.py
 from datetime import datetime
-
 from fastapi import Cookie, Depends, Header, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from database.redis_cache import cache
 from database.session import get_db
 from models.auth_models import Session
-
+from response.result import Result
 async def valid_session(
     client_key: str = Cookie(default=None, alias="client_key"),
     x_client_key: str = Header(default=None, alias="client_key"),
     db: AsyncSession = Depends(get_db),
 ) -> Session:
-
+    
     client_key = client_key or x_client_key
 
     if not client_key:
-        raise HTTPException(status_code=401, detail="Missing session")
-
+        return Result(code=401, message="Missing sessio").http_response()
+    
     cache_key = f"session:{client_key}"
 
     # ── 1. Check Redis cache first ─────────────────────────────────────────────
@@ -36,7 +34,7 @@ async def valid_session(
             if session:
                 await db.delete(session)
                 await db.commit()
-            raise HTTPException(status_code=401, detail="Session expired")
+            return Result(code=401, message="Session expired").http_response()
 
         # Rebuild a lightweight Session object from cache (no DB hit)
         session = Session(
@@ -56,12 +54,11 @@ async def valid_session(
     session = result.scalar_one_or_none()
 
     if not session:
-        raise HTTPException(status_code=401, detail="Invalid session")
-
+        return Result(code=401, message="Invalid session").http_response()
     if session.valid_till < datetime.utcnow():
         await db.delete(session)
         await db.commit()
-        raise HTTPException(status_code=401, detail="Session expired")
+        return Result(code=401, message="Session expired").http_response()
 
     # ── 3. Warm the cache for next request ────────────────────────────────────
     ttl_seconds = int((session.valid_till - datetime.utcnow()).total_seconds())

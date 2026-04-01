@@ -1,5 +1,5 @@
 # api/profile.py
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Cookie, Depends, Header, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -53,17 +53,20 @@ async def get_profile(
 @profile_router.post("/logout/")
 async def logout(
     response: Response,
-    session: Session = Depends(valid_session),
+    cookie_key: str = Cookie(default=None, alias="client_key"),
+    header_key: str = Header(default=None, alias="client_key"),
     db: AsyncSession = Depends(get_db),
 ):
-    # 1. Remove from Redis cache
-    await cache.delete(f"session:{session.client_key}")
+    
+    key = cookie_key or header_key
 
-    # 2. Delete session row from DB
-    await db.delete(session)
-    await db.commit()
-
-    # 3. Clear the cookie (web clients)
+    if key:
+        await cache.delete(f"session:{key}")
+        result = await db.execute(select(Session).where(Session.client_key == key))
+        session = result.scalar_one_or_none()
+        if session:
+            await db.delete(session)
+            await db.commit()
     response.delete_cookie(key="client_key")
 
     return Result(code=200, message="Logged out successfully").http_response()

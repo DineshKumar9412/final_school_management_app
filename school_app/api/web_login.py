@@ -1,9 +1,8 @@
-# api/login.py
+# api/web_login.py
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,7 +13,7 @@ from models.employee_models import Employee, Role
 from response.result import Result
 from schemas.auth_schemas import WebLoginRequest
 
-login_router = APIRouter(tags=["SCHOOL AUTH"])
+web_login_router = APIRouter(tags=["SCHOOL AUTH"])
 
 SESSION_TTL_HOURS = 24 * 3          # 3 days
 
@@ -27,7 +26,7 @@ def verify_password(password: str, hashed: str) -> bool:
 
 # ── web login ──────────────────────────────────────────────────────────────────
 
-@login_router.post("/web/login/")
+@web_login_router.post("/web/login/")
 async def web_login(
     payload: WebLoginRequest,
     response: Response,
@@ -57,9 +56,9 @@ async def web_login(
 
     if not verify_password(payload.password, employee.password):
         return Result(code=401, message="Invalid credentials").http_response()
-    
+
     user_id    = str(employee.id)
-    role_str   = role_name                              
+    role_str   = role_name
     client_key = str(uuid4())
     valid_till = datetime.utcnow() + timedelta(hours=SESSION_TTL_HOURS)
 
@@ -86,11 +85,11 @@ async def web_login(
     await cache.set(
         key    = f"session:{client_key}",
         value  = {
+            "id"         : new_session.id,
+            "device_id"  : None,
             "user_id"    : user_id,
             "role"       : role_str,
-            "emp_id"     : employee.emp_id,
-            "first_name" : employee.first_name,
-            "last_name"  : employee.last_name,
+            "valid_till" : valid_till.isoformat(),
         },
         expire = SESSION_TTL_HOURS * 3600,
     )

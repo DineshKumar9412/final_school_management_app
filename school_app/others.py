@@ -31,3 +31,10 @@ import json
 payload_for_request = json.dumps({"payload": encrypted})
 print("Request body:", payload_for_request)
 
+## others 
+## Example Call
+# curl -X POST http://localhost:8000/api/auth/web/login/ \
+#   -H "Content-Type: application/json" \
+#   -d '{
+#     "payload": "/+TwoXzRhbkruMbS8YhtEFG59Mgsh1GLNhX9WoWXwA4sV0vmQUJ52phuYw0d0XA8hMizA1pKO/VI+pxLsI48hg=="
+#   }'

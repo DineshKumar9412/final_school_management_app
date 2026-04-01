@@ -5,12 +5,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.redis_cache import cache
 from database.session import get_db
-from models.employee import Employee
-from models.session import Session
+from models.auth_models import Session
+from models.employee_models import Employee
 from response.result import Result
 from security.valid_session import valid_session
 
-profile_router = APIRouter()
+profile_router = APIRouter(tags=["SCHOOL AUTH"])
 
 
 @profile_router.get("/profile/")

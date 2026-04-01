@@ -4,7 +4,7 @@ from sqlalchemy import select
 from datetime import datetime, timedelta
 from random import randint
 
-from models.otp import OtpVerification
+from models.auth_models import OtpVerification
 from helper.pushnotification import send_push_notification
 
 

@@ -7,8 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.redis_cache import cache
 from database.session import get_db
-from models.session import Session
-
+from models.auth_models import Session
 
 async def valid_session(
     client_key: str = Cookie(default=None, alias="client_key"),

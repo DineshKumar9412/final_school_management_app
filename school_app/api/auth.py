@@ -4,11 +4,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.session import get_db
-from models.device import DeviceRegistration
+from models.auth_models import DeviceRegistration
 from response.result import Result
-from schemas.device import RegisterDeviceRequest
+from schemas.auth_schemas import RegisterDeviceRequest
 
-auth_router = APIRouter()
+auth_router = APIRouter(tags=["SCHOOL AUTH"])
 
 # ── register device ────────────────────────────────────────────────────────────
 

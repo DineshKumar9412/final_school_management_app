@@ -8,16 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.session import get_db
 from helper.optmessage import _send_otp_logic, _verify_otp_logic
-from models.device import DeviceRegistration
-from models.employee import Employee
-from models.role import RoleCreation
-from models.session import Session
-from models.student import Student
+from models.auth_models import DeviceRegistration, Session
+from models.employee_models import Employee, Role
+from models.student_models import Student
 from response.result import Result
-from schemas.android import AndroidLoginRequest, AndroidResendOtpRequest, AndroidVerifyOtpRequest
+from schemas.auth_schemas import AndroidLoginRequest, AndroidResendOtpRequest, AndroidVerifyOtpRequest
 from security.valid_session import valid_session
 
-android_router = APIRouter()
+android_router = APIRouter(tags=["SCHOOL AUTH"])
 
 SESSION_TTL_HOURS = 24 * 90         # 3 months
 
@@ -65,9 +63,9 @@ async def android_login(
 
     if employee:
         role_name = None
-        if employee.role_id:
+        if employee.role_id is not None:
             role_result = await db.execute(
-                select(RoleCreation).where(RoleCreation.role_id == employee.role_id)
+                select(Role).where(Role.role_id == employee.role_id)
             )
             role = role_result.scalar_one_or_none()
             role_name = role.role_name if role else None

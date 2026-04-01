@@ -9,14 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.redis_cache import cache
 from database.session import get_db
-from models.device import DeviceRegistration
-from models.employee import Employee
-from models.role import RoleCreation
-from models.session import Session
+from models.auth_models import Session
+from models.employee_models import Employee, Role
 from response.result import Result
-from schemas.auth import WebLoginRequest
+from schemas.auth_schemas import WebLoginRequest
 
-login_router = APIRouter()
+login_router = APIRouter(tags=["SCHOOL AUTH"])
 
 SESSION_TTL_HOURS = 24 * 3          # 3 days
 
@@ -47,9 +45,9 @@ async def web_login(
         return Result(code=401, message="Invalid credentials").http_response()
 
     role_name = None
-    if employee.role_id:
+    if employee.role_id is not None:
         role_result = await db.execute(
-            select(RoleCreation).where(RoleCreation.role_id == employee.role_id)
+            select(Role).where(Role.role_id == employee.role_id)
         )
         role = role_result.scalar_one_or_none()
         role_name = role.role_name if role else None

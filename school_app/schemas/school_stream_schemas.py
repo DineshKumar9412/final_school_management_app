@@ -51,7 +51,17 @@ class SchoolGroupResponse(BaseModel):
     group_name:      str
     status:          SchoolGroupStatus
 
-    model_config = {"from_attributes": True}
+    model_config = {
+        "from_attributes": True,
+        "json_schema_extra": {
+            "example": {
+                "school_group_id": 1,
+                "school_id":       1,
+                "group_name":      "Primary",
+                "status":          "active"
+            }
+        }
+    }
 
 
 # ══════════════════════════════════════════════
@@ -76,11 +86,32 @@ class SchoolStreamCreate(BaseModel):
     stream_code:     Optional[str]        = None
     status:          Optional[StatusEnum] = StatusEnum.active
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "school_id":       1,
+                "school_group_id": 1,
+                "stream_name":     "Science",
+                "stream_code":     "SCI",
+                "status":          "active"
+            }
+        }
+    }
+
 
 class SchoolStreamUpdate(BaseModel):
     school_group_id: Optional[int]        = None
     stream_name:     Optional[str]        = None
     status:          Optional[StatusEnum] = None
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "stream_name": "Commerce",
+                "status":      "active"
+            }
+        }
+    }
 
 
 class SchoolStreamResponse(BaseModel):
@@ -91,7 +122,19 @@ class SchoolStreamResponse(BaseModel):
     stream_code:      Optional[str]
     status:           StatusEnum
 
-    model_config = {"from_attributes": True}
+    model_config = {
+        "from_attributes": True,
+        "json_schema_extra": {
+            "example": {
+                "school_stream_id": 1,
+                "school_id":        1,
+                "school_group_id":  1,
+                "stream_name":      "Science",
+                "stream_code":      "SCI",
+                "status":           "active"
+            }
+        }
+    }
 
 
 # ══════════════════════════════════════════════
@@ -106,6 +149,19 @@ class SchoolStreamClassCreate(BaseModel):
     class_code:       str
     status:           Optional[StatusEnum] = StatusEnum.active
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "school_id":        1,
+                "school_group_id":  1,
+                "school_stream_id": 1,
+                "class_name":       "Class 10",
+                "class_code":       "10",
+                "status":           "active"
+            }
+        }
+    }
+
 
 class SchoolStreamClassUpdate(BaseModel):
     school_group_id:  Optional[int]        = None
@@ -114,6 +170,16 @@ class SchoolStreamClassUpdate(BaseModel):
     class_code:       Optional[str]        = None
     description:      Optional[str]        = None
     status:           Optional[StatusEnum] = None
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "class_name": "Class 11",
+                "class_code": "11",
+                "status":     "active"
+            }
+        }
+    }
 
 
 class SchoolStreamClassResponse(BaseModel):
@@ -125,7 +191,20 @@ class SchoolStreamClassResponse(BaseModel):
     class_code:       Optional[str]
     status:           StatusEnum
 
-    model_config = {"from_attributes": True}
+    model_config = {
+        "from_attributes": True,
+        "json_schema_extra": {
+            "example": {
+                "class_id":         1,
+                "school_id":        1,
+                "school_group_id":  1,
+                "school_stream_id": 1,
+                "class_name":       "Class 10",
+                "class_code":       "10",
+                "status":           "active"
+            }
+        }
+    }
 
 
 # ══════════════════════════════════════════════
@@ -140,6 +219,19 @@ class SchoolStreamClassSectionCreate(BaseModel):
     section_name:     str = Field(..., max_length=200)
     status:           Optional[StatusEnum] = StatusEnum.active
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "school_id":        1,
+                "class_id":         1,
+                "school_stream_id": None,
+                "section_code":     "A",
+                "section_name":     "Rose",
+                "status":           "active"
+            }
+        }
+    }
+
 
 class SchoolStreamClassSectionUpdate(BaseModel):
     class_id:         Optional[int]        = None
@@ -148,6 +240,16 @@ class SchoolStreamClassSectionUpdate(BaseModel):
     section_name:     Optional[str]        = Field(None, max_length=200)
     description:      Optional[str]        = None
     status:           Optional[StatusEnum] = None
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "section_code": "B",
+                "section_name": "Lily",
+                "status":       "active"
+            }
+        }
+    }
 
 
 class SchoolStreamClassSectionResponse(BaseModel):
@@ -159,7 +261,20 @@ class SchoolStreamClassSectionResponse(BaseModel):
     section_name:     str
     status:           StatusEnum
 
-    model_config = {"from_attributes": True}
+    model_config = {
+        "from_attributes": True,
+        "json_schema_extra": {
+            "example": {
+                "section_id":       1,
+                "school_id":        1,
+                "class_id":         1,
+                "school_stream_id": None,
+                "section_code":     "A",
+                "section_name":     "Rose",
+                "status":           "active"
+            }
+        }
+    }
 
 
 # ══════════════════════════════════════════════
@@ -173,12 +288,33 @@ class SchoolStreamSubjectCreate(BaseModel):
     description:  Optional[str] = None
     status:       Optional[StatusEnum] = StatusEnum.active
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "school_id":    1,
+                "class_id":     1,
+                "subject_name": "Mathematics",
+                "description":  None,
+                "status":       "active"
+            }
+        }
+    }
+
 
 class SchoolStreamSubjectUpdate(BaseModel):
     class_id:     Optional[int]        = None
     subject_name: Optional[str]        = None
     description:  Optional[str]        = None
     status:       Optional[StatusEnum] = None
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "subject_name": "Physics",
+                "status":       "active"
+            }
+        }
+    }
 
 
 class SchoolStreamSubjectResponse(BaseModel):
@@ -188,7 +324,18 @@ class SchoolStreamSubjectResponse(BaseModel):
     subject_name: str
     status:       StatusEnum
 
-    model_config = {"from_attributes": True}
+    model_config = {
+        "from_attributes": True,
+        "json_schema_extra": {
+            "example": {
+                "subject_id":   1,
+                "school_id":    1,
+                "class_id":     1,
+                "subject_name": "Mathematics",
+                "status":       "active"
+            }
+        }
+    }
 
 
 # ══════════════════════════════════════════════

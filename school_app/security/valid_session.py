@@ -1,12 +1,18 @@
 # security/valid_session.py
 from datetime import datetime
-from fastapi import Cookie, Depends, Header, HTTPException
+from fastapi import Cookie, Depends, Header
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from database.redis_cache import cache
 from database.session import get_db
 from models.auth_models import Session
-from response.result import Result
+
+# SESSION AUTH ERROR
+class SessionAuthError(Exception):
+    def __init__(self, code: int, message: str):
+        self.code    = code
+        self.message = message
+
 async def valid_session(
     client_key: str = Cookie(default=None, alias="client_key"),
     x_client_key: str = Header(default=None, alias="client_key"),
@@ -16,8 +22,8 @@ async def valid_session(
     client_key = client_key or x_client_key
 
     if not client_key:
-        return Result(code=401, message="Missing sessio").http_response()
-    
+        raise SessionAuthError(401, "Missing session.")
+
     cache_key = f"session:{client_key}"
 
     # ── 1. Check Redis cache first ─────────────────────────────────────────────
@@ -25,7 +31,6 @@ async def valid_session(
     if cached:
         valid_till = datetime.fromisoformat(cached["valid_till"])
         if valid_till < datetime.utcnow():
-            # Expired in cache — clean both cache + DB
             await cache.delete(cache_key)
             result = await db.execute(
                 select(Session).where(Session.client_key == client_key)
@@ -34,9 +39,8 @@ async def valid_session(
             if session:
                 await db.delete(session)
                 await db.commit()
-            return Result(code=401, message="Session expired").http_response()
+            raise SessionAuthError(401, "Session expired.")
 
-        # Rebuild a lightweight Session object from cache (no DB hit)
         session = Session(
             id         = cached["id"],
             device_id  = cached.get("device_id"),
@@ -54,11 +58,11 @@ async def valid_session(
     session = result.scalar_one_or_none()
 
     if not session:
-        return Result(code=401, message="Invalid session").http_response()
+        raise SessionAuthError(401, "Invalid session.")
     if session.valid_till < datetime.utcnow():
         await db.delete(session)
         await db.commit()
-        return Result(code=401, message="Session expired").http_response()
+        raise SessionAuthError(401, "Session expired.")
 
     # ── 3. Warm the cache for next request ────────────────────────────────────
     ttl_seconds = int((session.valid_till - datetime.utcnow()).total_seconds())

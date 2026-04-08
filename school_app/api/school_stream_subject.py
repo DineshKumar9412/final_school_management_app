@@ -12,10 +12,7 @@ from schemas.school_stream_schemas import (
 from security.valid_session import valid_session
 from response.result import Result
 
-school_stream_subject_router = APIRouter(
-    tags=["SCHOOL STREAM SUBJECT"],
-    dependencies=[Depends(valid_session)],
-)
+school_stream_subject_router = APIRouter(tags=["SCHOOL STREAM SUBJECT"], dependencies=[Depends(valid_session)])
 
 CACHE_TTL = 86400
 STATUS_VALUES = {"active", "inactive"}
@@ -59,11 +56,7 @@ _404 = {"content": {"application/json": {"example": {"code": 404, "message": "Su
 _409 = {"content": {"application/json": {"example": {"code": 409, "message": "Subject name 'Mathematics' already exists for this class.", "result": {}}}}}
 
 
-# ─── CREATE ───────────────────────────────────
-
-@school_stream_subject_router.post(
-    "/create_subject",
-    summary="Create a new subject",
+@school_stream_subject_router.post("/create_subject", summary="Create a new subject",
     responses={
         201: {"content": {"application/json": {"example": {"code": 201, "message": "Subject created successfully.", "result": _SUBJECT_RESULT}}}},
         409: _409,
@@ -90,11 +83,7 @@ async def create_subject(payload: SchoolStreamSubjectCreate, db: AsyncSession = 
     return Result(code=201, message="Subject created successfully.", extra=data).http_response()
 
 
-# ─── GET ALL ──────────────────────────────────
-
-@school_stream_subject_router.get(
-    "/subjectlist",
-    summary="List all subjects (paginated)",
+@school_stream_subject_router.get("/subjectlist", summary="List all subjects (paginated)",
     responses={
         200: {"content": {"application/json": {"example": {
             "code": 200, "message": "Subjects fetched successfully.",
@@ -128,15 +117,12 @@ async def list_subjects(
     rows = await db.execute(stmt.order_by(SchoolStreamSubject.subject_id).offset(offset).limit(limit))
 
     data = {"total": total, "page": page, "limit": limit, "data": [_row_to_dict(r) for r in rows.all()]}
-    await cache.set(key, data, expire=CACHE_TTL)
+    if total > 0:  # only cache when data exists
+        await cache.set(key, data, expire=CACHE_TTL)
     return Result(code=200, message="Subjects fetched successfully.", extra=data).http_response()
 
 
-# ─── GET BY ID ────────────────────────────────
-
-@school_stream_subject_router.get(
-    "/get_id/{subject_id}",
-    summary="Get a subject by ID",
+@school_stream_subject_router.get("/get_id/{subject_id}", summary="Get a subject by ID",
     responses={
         200: {"content": {"application/json": {"example": {"code": 200, "message": "Subject fetched successfully.", "result": _SUBJECT_RESULT}}}},
         404: _404,
@@ -157,11 +143,7 @@ async def get_subject(subject_id: int, db: AsyncSession = Depends(get_db)):
     return Result(code=200, message="Subject fetched successfully.", extra=data).http_response()
 
 
-# ─── UPDATE ───────────────────────────────────
-
-@school_stream_subject_router.put(
-    "/update_subject/{subject_id}",
-    summary="Update a subject",
+@school_stream_subject_router.put("/update_subject/{subject_id}", summary="Update a subject",
     responses={
         200: {"content": {"application/json": {"example": {"code": 200, "message": "Subject updated successfully.", "result": _SUBJECT_RESULT}}}},
         404: _404,
@@ -185,11 +167,7 @@ async def update_subject(subject_id: int, payload: SchoolStreamSubjectUpdate, db
     return Result(code=200, message="Subject updated successfully.", extra=data).http_response()
 
 
-# ─── DELETE ───────────────────────────────────
-
-@school_stream_subject_router.delete(
-    "/delete_subject/{subject_id}",
-    summary="Soft delete a subject",
+@school_stream_subject_router.delete("/delete_subject/{subject_id}", summary="Soft delete a subject",
     responses={
         200: {"content": {"application/json": {"example": {"code": 200, "message": "Subject deleted successfully.", "result": {"subject_id": 1}}}}},
         404: _404,
@@ -209,11 +187,7 @@ async def delete_subject(subject_id: int, db: AsyncSession = Depends(get_db)):
     return Result(code=200, message="Subject deleted successfully.", extra={"subject_id": subject_id}).http_response()
 
 
-# ─── DROPDOWN ─────────────────────────────────
-
-@school_stream_subject_router.get(
-    "/subjects/all",
-    summary="Dropdown: Subjects",
+@school_stream_subject_router.get("/subjects/all", summary="Dropdown: Subjects",
     responses={
         200: {"content": {"application/json": {"example": {
             "code": 200, "message": "Dropdown fetched.",
@@ -236,5 +210,6 @@ async def dropdown_subjects(class_id: int | None = Query(None), search: str | No
 
     rows = await db.execute(stmt.order_by(SchoolStreamSubject.subject_name))
     data = [{"id": r.subject_id, "name": r.subject_name} for r in rows.all()]
-    await cache.set(key, data, expire=CACHE_TTL)
+    if data:  # only cache when data exists
+        await cache.set(key, data, expire=CACHE_TTL)
     return Result(code=200, message="Dropdown fetched.", extra=data).http_response()

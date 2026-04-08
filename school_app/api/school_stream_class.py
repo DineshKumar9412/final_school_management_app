@@ -14,10 +14,7 @@ from schemas.school_stream_schemas import (
 from security.valid_session import valid_session
 from response.result import Result
 
-school_stream_class_router = APIRouter(
-    tags=["SCHOOL STREAM CLASS"],
-    dependencies=[Depends(valid_session)],
-)
+school_stream_class_router = APIRouter(tags=["SCHOOL STREAM CLASS"], dependencies=[Depends(valid_session)])
 
 CACHE_TTL = 86400
 STATUS_VALUES = {"active", "inactive"}
@@ -30,8 +27,8 @@ def clean_search(search: str | None) -> str | None:
 def _item_key(class_id: int) -> str:
     return f"school_stream_class:{class_id}"
 
-def _list_key(page: int, limit: int, search: str | None) -> str:
-    return f"school_stream_class:list:{page}:{limit}:{search}"
+def _list_key(page: int, limit: int, search: str | None, school_group_id: int | None = None) -> str:
+    return f"school_stream_class:list:{page}:{limit}:{search}:{school_group_id}"
 
 def _row_to_dict(r) -> dict:
     return {
@@ -61,11 +58,7 @@ _404 = {"content": {"application/json": {"example": {"code": 404, "message": "Cl
 _409 = {"content": {"application/json": {"example": {"code": 409, "message": "Class code '10' already exists for this group.", "result": {}}}}}
 
 
-# ─── CREATE ───────────────────────────────────
-
-@school_stream_class_router.post(
-    "/create_class",
-    summary="Create a new class",
+@school_stream_class_router.post("/create_class", summary="Create a new class",
     responses={
         201: {"content": {"application/json": {"example": {"code": 201, "message": "Class created successfully.", "result": _CLASS_RESULT}}}},
         409: _409,
@@ -94,11 +87,7 @@ async def create_class(payload: SchoolStreamClassCreate, db: AsyncSession = Depe
     return Result(code=201, message="Class created successfully.", extra=data).http_response()
 
 
-# ─── GET ALL ──────────────────────────────────
-
-@school_stream_class_router.get(
-    "/classlist",
-    summary="List all classes (paginated)",
+@school_stream_class_router.get("/classlist", summary="List all classes (paginated)",
     responses={
         200: {"content": {"application/json": {"example": {
             "code": 200, "message": "Classes fetched successfully.",
@@ -107,19 +96,23 @@ async def create_class(payload: SchoolStreamClassCreate, db: AsyncSession = Depe
     },
 )
 async def list_classes(
-    page:   int        = Query(1,    ge=1),
-    limit:  int        = Query(10,   ge=1, le=100),
-    search: str | None = Query(None, description="Search by class_code, or type 'active'/'inactive'"),
+    page:            int        = Query(1,    ge=1),
+    limit:           int        = Query(10,   ge=1, le=100),
+    search:          str | None = Query(None, description="Search by class_code, or type 'active'/'inactive'"),
+    school_group_id: int | None = Query(None, description="Filter by school group ID"),
     db: AsyncSession = Depends(get_db),
 ):
     search = clean_search(search)
-    key = _list_key(page, limit, search)
+    key = _list_key(page, limit, search, school_group_id)
     cached = await cache.get(key)
     if cached:
         return Result(code=200, message="Classes fetched successfully (cache).", extra=cached).http_response()
 
     offset = (page - 1) * limit
     stmt = _joined_stmt()
+
+    if school_group_id is not None:
+        stmt = stmt.where(SchoolStreamClass.school_group_id == school_group_id)
 
     if search is not None and search.lower() in STATUS_VALUES:
         stmt = stmt.where(SchoolStreamClass.status == search.lower())
@@ -132,15 +125,12 @@ async def list_classes(
     rows = await db.execute(stmt.order_by(SchoolStreamClass.class_id).offset(offset).limit(limit))
 
     data = {"total": total, "page": page, "limit": limit, "data": [_row_to_dict(r) for r in rows.all()]}
-    await cache.set(key, data, expire=CACHE_TTL)
+    if total > 0:  # only cache when data exists
+        await cache.set(key, data, expire=CACHE_TTL)
     return Result(code=200, message="Classes fetched successfully.", extra=data).http_response()
 
 
-# ─── GET BY ID ────────────────────────────────
-
-@school_stream_class_router.get(
-    "/get_id/{class_id}",
-    summary="Get a class by ID",
+@school_stream_class_router.get("/get_id/{class_id}", summary="Get a class by ID",
     responses={
         200: {"content": {"application/json": {"example": {"code": 200, "message": "Class fetched successfully.", "result": _CLASS_RESULT}}}},
         404: _404,
@@ -161,11 +151,7 @@ async def get_class(class_id: int, db: AsyncSession = Depends(get_db)):
     return Result(code=200, message="Class fetched successfully.", extra=data).http_response()
 
 
-# ─── UPDATE ───────────────────────────────────
-
-@school_stream_class_router.put(
-    "/update_class/{class_id}",
-    summary="Update a class",
+@school_stream_class_router.put("/update_class/{class_id}", summary="Update a class",
     responses={
         200: {"content": {"application/json": {"example": {"code": 200, "message": "Class updated successfully.", "result": _CLASS_RESULT}}}},
         404: _404,
@@ -189,11 +175,7 @@ async def update_class(class_id: int, payload: SchoolStreamClassUpdate, db: Asyn
     return Result(code=200, message="Class updated successfully.", extra=data).http_response()
 
 
-# ─── DELETE ───────────────────────────────────
-
-@school_stream_class_router.delete(
-    "/delete_class/{class_id}",
-    summary="Soft delete a class and all its children",
+@school_stream_class_router.delete("/delete_class/{class_id}", summary="Soft delete a class and all its children",
     responses={
         200: {"content": {"application/json": {"example": {"code": 200, "message": "Class and all related records deleted successfully.", "result": {"class_id": 1}}}}},
         404: _404,
@@ -219,11 +201,7 @@ async def delete_class(class_id: int, db: AsyncSession = Depends(get_db)):
     return Result(code=200, message="Class and all related records deleted successfully.", extra={"class_id": class_id}).http_response()
 
 
-# ─── DROPDOWN ─────────────────────────────────
-
-@school_stream_class_router.get(
-    "/classes/all",
-    summary="Dropdown: Classes",
+@school_stream_class_router.get("/classes/all", summary="Dropdown: Classes",
     responses={
         200: {"content": {"application/json": {"example": {
             "code": 200, "message": "Dropdown fetched.",
@@ -238,13 +216,25 @@ async def dropdown_classes(school_stream_id: int | None = Query(None), search: s
     if cached:
         return Result(code=200, message="Dropdown fetched (cache).", extra=cached).http_response()
 
-    stmt = select(SchoolStreamClass.class_id, SchoolStreamClass.class_code).where(SchoolStreamClass.status == "active")
+    stmt = (
+        select(
+            SchoolStreamClass.class_id,
+            SchoolStreamClass.class_code,
+            SchoolStream.stream_name,
+        )
+        .outerjoin(SchoolStream, SchoolStreamClass.school_stream_id == SchoolStream.school_stream_id)
+        .where(SchoolStreamClass.status == "active")
+    )
     if school_stream_id:
         stmt = stmt.where(SchoolStreamClass.school_stream_id == school_stream_id)
     if search:
         stmt = stmt.where(SchoolStreamClass.class_code.like(f"%{search}%"))
 
     rows = await db.execute(stmt.order_by(SchoolStreamClass.class_code))
-    data = [{"id": r.class_id, "name": r.class_code} for r in rows.all()]
-    await cache.set(key, data, expire=CACHE_TTL)
+    data = [
+        {"class_id": r.class_id, "class_code": r.class_code, "stream_name": r.stream_name}
+        for r in rows.all()
+    ]
+    if data:
+        await cache.set(key, data, expire=CACHE_TTL)
     return Result(code=200, message="Dropdown fetched.", extra=data).http_response()

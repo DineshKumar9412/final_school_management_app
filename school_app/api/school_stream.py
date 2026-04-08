@@ -6,24 +6,15 @@ from sqlalchemy import select, func, update
 from database.session import get_db
 from database.redis_cache import cache
 from models.school_stream_models import (
-    SchoolGroup,
-    SchoolStream,
-    SchoolStreamClass,
-    SchoolStreamClassSection,
-    SchoolStreamSubject,
+    SchoolGroup, SchoolStream, SchoolStreamClass, SchoolStreamClassSection, SchoolStreamSubject,
 )
 from schemas.school_stream_schemas import (
-    SchoolStreamCreate,
-    SchoolStreamUpdate,
-    SchoolStreamResponse,
+    SchoolStreamCreate, SchoolStreamUpdate, SchoolStreamResponse,
 )
 from security.valid_session import valid_session
 from response.result import Result
 
-school_stream_router = APIRouter(
-    tags=["SCHOOL STREAM"],
-    dependencies=[Depends(valid_session)],
-)
+school_stream_router = APIRouter(tags=["SCHOOL STREAM"], dependencies=[Depends(valid_session)])
 
 CACHE_TTL = 86400
 STATUS_VALUES = {"active", "inactive"}
@@ -41,18 +32,13 @@ def _list_key(page: int, limit: int, search: str | None) -> str:
 
 _STREAM_RESULT = {
     "school_stream_id": 1, "school_id": 1, "school_group_id": 1,
-    "group_name": "Primary", "stream_name": "Science",
-    "stream_code": "SCI", "status": "active"
+    "group_name": "Primary", "stream_name": "Science", "stream_code": "SCI", "status": "active"
 }
 _404 = {"content": {"application/json": {"example": {"code": 404, "message": "School stream not found.", "result": {}}}}}
 _409_STREAM = {"content": {"application/json": {"example": {"code": 409, "message": "Stream name 'Science' already exists for this group.", "result": {}}}}}
 
 
-# ─── CREATE ───────────────────────────────────
-
-@school_stream_router.post(
-    "/create_stream",
-    summary="Create a new school stream",
+@school_stream_router.post("/create_stream", summary="Create a new school stream",
     responses={
         201: {"content": {"application/json": {"example": {"code": 201, "message": "School stream created successfully.", "result": _STREAM_RESULT}}}},
         409: _409_STREAM,
@@ -79,11 +65,7 @@ async def create_school_stream(payload: SchoolStreamCreate, db: AsyncSession = D
     return Result(code=201, message="School stream created successfully.", extra=data).http_response()
 
 
-# ─── GET ALL ──────────────────────────────────
-
-@school_stream_router.get(
-    "/streamlist",
-    summary="List all school streams (paginated)",
+@school_stream_router.get("/streamlist", summary="List all school streams (paginated)",
     responses={
         200: {"content": {"application/json": {"example": {
             "code": 200, "message": "School streams fetched successfully.",
@@ -106,9 +88,8 @@ async def list_school_streams(
     offset = (page - 1) * limit
     stmt = (
         select(
-            SchoolStream.school_stream_id, SchoolStream.school_id,
-            SchoolStream.school_group_id, SchoolStream.stream_name,
-            SchoolStream.stream_code, SchoolStream.status, SchoolGroup.group_name,
+            SchoolStream.school_stream_id, SchoolStream.school_id, SchoolStream.school_group_id,
+            SchoolStream.stream_name, SchoolStream.stream_code, SchoolStream.status, SchoolGroup.group_name,
         )
         .join(SchoolGroup, SchoolStream.school_group_id == SchoolGroup.school_group_id)
     )
@@ -125,19 +106,25 @@ async def list_school_streams(
 
     data = {
         "total": total, "page": page, "limit": limit,
-        "data": [{"school_stream_id": r.school_stream_id, "school_id": r.school_id, "school_group_id": r.school_group_id,
-                  "group_name": r.group_name, "stream_name": r.stream_name, "stream_code": r.stream_code, "status": r.status}
-                 for r in rows.all()],
+        "data": [
+            {
+                "school_stream_id": r.school_stream_id,
+                "school_id":        r.school_id,
+                "school_group_id": r.school_group_id,
+                "group_name":       r.group_name,
+                "stream_name":      r.stream_name,
+                "stream_code":      r.stream_code,
+                "status":           r.status,
+            }
+            for r in rows.all()
+        ],
     }
-    await cache.set(key, data, expire=CACHE_TTL)
+    if total > 0:  # only cache when data exists
+        await cache.set(key, data, expire=CACHE_TTL)
     return Result(code=200, message="School streams fetched successfully.", extra=data).http_response()
 
 
-# ─── GET BY ID ────────────────────────────────
-
-@school_stream_router.get(
-    "/get_id/{stream_id}",
-    summary="Get a school stream by ID",
+@school_stream_router.get("/get_id/{stream_id}", summary="Get a school stream by ID",
     responses={
         200: {"content": {"application/json": {"example": {"code": 200, "message": "School stream fetched successfully.", "result": _STREAM_RESULT}}}},
         404: _404,
@@ -159,11 +146,7 @@ async def get_school_stream(stream_id: int, db: AsyncSession = Depends(get_db)):
     return Result(code=200, message="School stream fetched successfully.", extra=data).http_response()
 
 
-# ─── UPDATE ───────────────────────────────────
-
-@school_stream_router.put(
-    "/update_stream/{stream_id}",
-    summary="Update a school stream",
+@school_stream_router.put("/update_stream/{stream_id}", summary="Update a school stream",
     responses={
         200: {"content": {"application/json": {"example": {"code": 200, "message": "School stream updated successfully.", "result": _STREAM_RESULT}}}},
         404: _404,
@@ -187,11 +170,7 @@ async def update_school_stream(stream_id: int, payload: SchoolStreamUpdate, db: 
     return Result(code=200, message="School stream updated successfully.", extra=data).http_response()
 
 
-# ─── DELETE ───────────────────────────────────
-
-@school_stream_router.delete(
-    "/delete_stream/{stream_id}",
-    summary="Soft delete a stream and all its children",
+@school_stream_router.delete("/delete_stream/{stream_id}", summary="Soft delete a stream and all its children",
     responses={
         200: {"content": {"application/json": {"example": {"code": 200, "message": "School stream and all related records deleted successfully.", "result": {"school_stream_id": 1}}}}},
         404: _404,
@@ -211,7 +190,6 @@ async def delete_school_stream(stream_id: int, db: AsyncSession = Depends(get_db
 
     obj.status = "inactive"
     await db.commit()
-
     await cache.delete(_item_key(stream_id))
     await cache.delete_pattern("school_stream:list:*")
     await cache.delete_pattern("school_stream:dropdown:*")
@@ -222,15 +200,11 @@ async def delete_school_stream(stream_id: int, db: AsyncSession = Depends(get_db
     return Result(code=200, message="School stream and all related records deleted successfully.", extra={"school_stream_id": stream_id}).http_response()
 
 
-# ─── DROPDOWN ─────────────────────────────────
-
-@school_stream_router.get(
-    "/streams/all",
-    summary="Dropdown: Streams",
+@school_stream_router.get("/streams/all", summary="Dropdown: Streams",
     responses={
         200: {"content": {"application/json": {"example": {
             "code": 200, "message": "Dropdown fetched.",
-            "result": [{"id": 1, "name": "Science", "group_name": "Primary"}, {"id": 2, "name": "Commerce", "group_name": "Primary"}]
+            "result": [{"id": 1, "name": "Science", "group_name": "Primary"}]
         }}}},
     },
 )
@@ -256,6 +230,7 @@ async def dropdown_streams(
         stmt = stmt.where(SchoolStream.stream_name.like(f"%{search}%"))
 
     rows = await db.execute(stmt.order_by(SchoolStream.stream_name))
-    data = [{"id": r.school_stream_id, "name": r.stream_name, "group_name": r.group_name} for r in rows.all()]
-    await cache.set(key, data, expire=CACHE_TTL)
+    data = [{"school_stream_id": r.school_stream_id, "stream_name": r.stream_name, "group_name": r.group_name} for r in rows.all()]
+    if data:  # only cache when data exists
+        await cache.set(key, data, expire=CACHE_TTL)
     return Result(code=200, message="Dropdown fetched.", extra=data).http_response()

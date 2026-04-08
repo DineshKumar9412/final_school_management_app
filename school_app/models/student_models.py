@@ -25,17 +25,17 @@ class StudentStatusEnum(str, enum.Enum):
 class StudentAdmissionInquiry(Base):
     __tablename__ = "student_admission_inquiry"
 
-    student_inq_id:       Mapped[int]                  = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    student_name:         Mapped[str]                  = mapped_column(String(100), nullable=False)
-    gender:               Mapped[Optional[GenderEnum]] = mapped_column(Enum(GenderEnum), nullable=True)
-    age:                  Mapped[Optional[int]]        = mapped_column(Integer, nullable=True)
-    class_id:             Mapped[Optional[int]]        = mapped_column(Integer, nullable=True)
-    guardian_name:        Mapped[Optional[str]]        = mapped_column(String(150), nullable=True)
-    guardian_phone:       Mapped[Optional[str]]        = mapped_column(String(30), nullable=True)
-    guardian_occupation:  Mapped[Optional[str]]        = mapped_column(String(150), nullable=True)
-    guardian_gender:      Mapped[Optional[GenderEnum]] = mapped_column(Enum(GenderEnum), nullable=True)
-    created_at:           Mapped[datetime]             = mapped_column(server_default=func.current_timestamp(), nullable=False)
-    updated_at:           Mapped[datetime]             = mapped_column(
+    student_inq_id:      Mapped[int]                  = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    student_name:        Mapped[str]                  = mapped_column(String(100), nullable=False)
+    gender:              Mapped[Optional[GenderEnum]] = mapped_column(Enum(GenderEnum), nullable=True)
+    age:                 Mapped[Optional[int]]        = mapped_column(Integer, nullable=True)
+    class_id:            Mapped[Optional[int]]        = mapped_column(Integer, nullable=True)
+    guardian_name:       Mapped[Optional[str]]        = mapped_column(String(150), nullable=True)
+    guardian_phone:      Mapped[Optional[str]]        = mapped_column(String(30), nullable=True)
+    guardian_occupation: Mapped[Optional[str]]        = mapped_column(String(150), nullable=True)
+    guardian_gender:     Mapped[Optional[GenderEnum]] = mapped_column(Enum(GenderEnum), nullable=True)
+    created_at:          Mapped[datetime]             = mapped_column(server_default=func.current_timestamp(), nullable=False)
+    updated_at:          Mapped[datetime]             = mapped_column(
         server_default=func.current_timestamp(),
         onupdate=func.current_timestamp(),
         nullable=False,
@@ -52,33 +52,33 @@ class StudentAdmissionInquiry(Base):
 class Student(Base):
     __tablename__ = "student"
 
-    student_id:         Mapped[int]                      = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    school_id:          Mapped[int]                      = mapped_column(BigInteger, ForeignKey("school.school_id", ondelete="CASCADE"), nullable=False)
-    student_roll_id:    Mapped[Optional[str]]            = mapped_column(String(50), nullable=True)
-    student_inq_id:     Mapped[Optional[int]]            = mapped_column(BigInteger, ForeignKey("student_admission_inquiry.student_inq_id", ondelete="SET NULL"), nullable=True)
-    first_name:         Mapped[str]                      = mapped_column(String(100), nullable=False)
-    last_name:          Mapped[Optional[str]]            = mapped_column(String(100), nullable=True)
-    gender:             Mapped[Optional[GenderEnum]]     = mapped_column(Enum(GenderEnum), nullable=True)
-    dob:                Mapped[Optional[date]]           = mapped_column(Date, nullable=True)
-    age:                Mapped[Optional[int]]            = mapped_column(Integer, nullable=True)
-    email:              Mapped[Optional[str]]            = mapped_column(String(150), nullable=True)
-    phone:              Mapped[Optional[str]]            = mapped_column(String(30), nullable=True)
-    address_line1:      Mapped[Optional[str]]            = mapped_column(String(200), nullable=True)
-    address_line2:      Mapped[Optional[str]]            = mapped_column(String(200), nullable=True)
-    city:               Mapped[Optional[str]]            = mapped_column(String(100), nullable=True)
-    state:              Mapped[Optional[str]]            = mapped_column(String(100), nullable=True)
-    country:            Mapped[Optional[str]]            = mapped_column(String(100), nullable=True)
-    postal_code:        Mapped[Optional[str]]            = mapped_column(String(20), nullable=True)
-    blood_group:        Mapped[Optional[str]]            = mapped_column(String(10), nullable=True)
-    emergency_contact:  Mapped[Optional[str]]            = mapped_column(String(30), nullable=True)
-    guardian_first_name: Mapped[Optional[str]]           = mapped_column(String(150), nullable=True)
-    guardian_last_name:  Mapped[Optional[str]]           = mapped_column(String(150), nullable=True)
-    guardian_phone:      Mapped[str]                     = mapped_column(String(30), nullable=False)
-    guardian_email:      Mapped[Optional[str]]           = mapped_column(String(150), nullable=True)
-    guardian_gender:     Mapped[Optional[GenderEnum]]    = mapped_column(Enum(GenderEnum), nullable=True)
-    status:              Mapped[StudentStatusEnum]       = mapped_column(Enum(StudentStatusEnum), default=StudentStatusEnum.active, nullable=True)
-    created_at:          Mapped[datetime]                = mapped_column(server_default=func.current_timestamp(), nullable=False)
-    updated_at:          Mapped[datetime]                = mapped_column(
+    student_id:          Mapped[int]                   = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    school_id:           Mapped[int]                   = mapped_column(BigInteger, ForeignKey("school.school_id", ondelete="CASCADE"), nullable=False)
+    student_roll_id:     Mapped[Optional[str]]         = mapped_column(String(50), nullable=True)
+    student_inq_id:      Mapped[Optional[int]]         = mapped_column(BigInteger, ForeignKey("student_admission_inquiry.student_inq_id", ondelete="SET NULL"), nullable=True)
+    first_name:          Mapped[str]                   = mapped_column(String(100), nullable=False)
+    last_name:           Mapped[Optional[str]]         = mapped_column(String(100), nullable=True)
+    gender:              Mapped[Optional[GenderEnum]]  = mapped_column(Enum(GenderEnum), nullable=True)
+    dob:                 Mapped[Optional[date]]        = mapped_column(Date, nullable=True)
+    age:                 Mapped[Optional[int]]         = mapped_column(Integer, nullable=True)
+    email:               Mapped[Optional[str]]         = mapped_column(String(150), nullable=True)
+    phone:               Mapped[Optional[str]]         = mapped_column(String(30), nullable=True)
+    address_line1:       Mapped[Optional[str]]         = mapped_column(String(200), nullable=True)
+    address_line2:       Mapped[Optional[str]]         = mapped_column(String(200), nullable=True)
+    city:                Mapped[Optional[str]]         = mapped_column(String(100), nullable=True)
+    state:               Mapped[Optional[str]]         = mapped_column(String(100), nullable=True)
+    country:             Mapped[Optional[str]]         = mapped_column(String(100), nullable=True)
+    postal_code:         Mapped[Optional[str]]         = mapped_column(String(20), nullable=True)
+    blood_group:         Mapped[Optional[str]]         = mapped_column(String(10), nullable=True)
+    emergency_contact:   Mapped[Optional[str]]         = mapped_column(String(30), nullable=True)
+    guardian_first_name: Mapped[Optional[str]]         = mapped_column(String(150), nullable=True)
+    guardian_last_name:  Mapped[Optional[str]]         = mapped_column(String(150), nullable=True)
+    guardian_phone:      Mapped[str]                   = mapped_column(String(30), nullable=False)
+    guardian_email:      Mapped[Optional[str]]         = mapped_column(String(150), nullable=True)
+    guardian_gender:     Mapped[Optional[GenderEnum]]  = mapped_column(Enum(GenderEnum), nullable=True)
+    status:              Mapped[StudentStatusEnum]     = mapped_column(Enum(StudentStatusEnum), default=StudentStatusEnum.active, nullable=True)
+    created_at:          Mapped[datetime]              = mapped_column(server_default=func.current_timestamp(), nullable=False)
+    updated_at:          Mapped[datetime]              = mapped_column(
         server_default=func.current_timestamp(),
         onupdate=func.current_timestamp(),
         nullable=False,
@@ -99,17 +99,17 @@ class Student(Base):
 class StudentClassMapping(Base):
     __tablename__ = "school_class_student_mapping"
 
-    id:              Mapped[int]           = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    student_id:      Mapped[int]           = mapped_column(BigInteger, ForeignKey("student.student_id", ondelete="CASCADE"), nullable=False)
-    class_id:        Mapped[int]           = mapped_column(BigInteger, ForeignKey("school_stream_class.class_id", ondelete="CASCADE"), nullable=False)
-    section_id:      Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("school_stream_class_section.section_id", ondelete="SET NULL"), nullable=True)
-    enroll_date:     Mapped[Optional[date]]= mapped_column(Date, nullable=True)
-    valid_from_date: Mapped[Optional[date]]= mapped_column(Date, nullable=True)
-    valid_to_date:   Mapped[Optional[date]]= mapped_column(Date, nullable=True)
-    status:          Mapped[Optional[str]] = mapped_column(String(20), default="active", nullable=True)
-    is_active:       Mapped[Optional[bool]]= mapped_column(Boolean, default=True, nullable=True)
-    created_at:      Mapped[datetime]      = mapped_column(server_default=func.current_timestamp(), nullable=False)
-    updated_at:      Mapped[datetime]      = mapped_column(
+    id:              Mapped[int]            = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    student_id:      Mapped[int]            = mapped_column(BigInteger, ForeignKey("student.student_id", ondelete="CASCADE"), nullable=False)
+    class_id:        Mapped[int]            = mapped_column(BigInteger, ForeignKey("school_stream_class.class_id", ondelete="CASCADE"), nullable=False)
+    section_id:      Mapped[Optional[int]]  = mapped_column(BigInteger, ForeignKey("school_stream_class_section.section_id", ondelete="SET NULL"), nullable=True)
+    enroll_date:     Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    valid_from_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    valid_to_date:   Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    status:          Mapped[Optional[str]]  = mapped_column(String(20), default="active", nullable=True)
+    is_active:       Mapped[Optional[bool]] = mapped_column(Boolean, default=True, nullable=True)
+    created_at:      Mapped[datetime]       = mapped_column(server_default=func.current_timestamp(), nullable=False)
+    updated_at:      Mapped[datetime]       = mapped_column(
         server_default=func.current_timestamp(),
         onupdate=func.current_timestamp(),
         nullable=False,

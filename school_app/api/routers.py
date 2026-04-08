@@ -10,6 +10,16 @@ from api.school_stream_class_section import school_stream_section_router
 from api.school_stream_subject import school_stream_subject_router
 from api.student import student_router
 from api.employee import employee_router
+from api.exam import exam_router
+from api.class_teacher import class_teacher_router
+from api.attendance import attendance_router
+from api.timetable import timetable_router
+from api.notification import notification_router
+from api.holiday import holiday_router
+from api.announcement import announcement_router
+from api.student_diary import student_diary_router
+from api.transport import transport_router
+from api.emp_leave_request import emp_leave_router
 
 ROUTERS = [
     (auth_router,                  "/api/auth"),
@@ -23,4 +33,14 @@ ROUTERS = [
     (school_stream_subject_router, "/api/school_stream_subject"),
     (student_router,               "/api/student"),
     (employee_router,              "/api/employee"),
+    (exam_router,                  "/api/exam"),
+    (class_teacher_router,         "/api/teacher"),
+    (attendance_router,              "/api/attendance"),
+    (timetable_router,               "/api"),
+    (notification_router,           "/api/notification"),
+    (holiday_router,                "/api/holiday"),
+    (announcement_router,           "/api/announcement"),
+    (student_diary_router,          "/api/student_diary"),
+    (transport_router,              "/api/transport"),
+    (emp_leave_router,              "/api/emp_leave"),
 ]

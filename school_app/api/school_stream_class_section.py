@@ -12,10 +12,7 @@ from schemas.school_stream_schemas import (
 from security.valid_session import valid_session
 from response.result import Result
 
-school_stream_section_router = APIRouter(
-    tags=["SCHOOL STREAM CLASS SECTION"],
-    dependencies=[Depends(valid_session)],
-)
+school_stream_section_router = APIRouter(tags=["SCHOOL STREAM CLASS SECTION"], dependencies=[Depends(valid_session)])
 
 CACHE_TTL = 86400
 STATUS_VALUES = {"active", "inactive"}
@@ -33,23 +30,33 @@ def _list_key(page: int, limit: int, search: str | None) -> str:
 
 def _row_to_dict(r) -> dict:
     return {
-        "section_id": r.section_id, "school_id": r.school_id, "class_id": r.class_id,
-        "class_code": r.class_code, "school_stream_id": r.school_stream_id,
-        "stream_name": r.stream_name, "section_code": r.section_code,
-        "section_name": r.section_name, "status": r.status,
+        "section_id":       r.section_id,
+        "school_id":        r.school_id,
+        "class_id":         r.class_id,
+        "class_code":       r.class_code,
+        "school_stream_id": r.class_school_stream_id,   # ← unique label from class table
+        "stream_name":      r.stream_name,
+        "section_code":     r.section_code,
+        "section_name":     r.section_name,
+        "status":           r.status,
     }
 
 def _joined_stmt():
     return (
         select(
-            SchoolStreamClassSection.section_id, SchoolStreamClassSection.school_id,
-            SchoolStreamClassSection.class_id, SchoolStreamClassSection.school_stream_id,
-            SchoolStreamClassSection.section_code, SchoolStreamClassSection.section_name,
-            SchoolStreamClassSection.status, SchoolStreamClass.class_code, SchoolStream.stream_name,
+            SchoolStreamClassSection.section_id,
+            SchoolStreamClassSection.school_id,
+            SchoolStreamClassSection.class_id,
+            SchoolStreamClass.school_stream_id.label("class_school_stream_id"),  # ← unique label
+            SchoolStreamClassSection.section_code,
+            SchoolStreamClassSection.section_name,
+            SchoolStreamClassSection.status,
+            SchoolStreamClass.class_code,
+            SchoolStream.stream_name,
         )
         .select_from(SchoolStreamClassSection)
         .join(SchoolStreamClass, SchoolStreamClassSection.class_id == SchoolStreamClass.class_id)
-        .outerjoin(SchoolStream, SchoolStreamClassSection.school_stream_id == SchoolStream.school_stream_id)
+        .outerjoin(SchoolStream, SchoolStreamClass.school_stream_id == SchoolStream.school_stream_id)
     )
 
 def _count_stmt():
@@ -57,7 +64,7 @@ def _count_stmt():
         select(func.count(SchoolStreamClassSection.section_id))
         .select_from(SchoolStreamClassSection)
         .join(SchoolStreamClass, SchoolStreamClassSection.class_id == SchoolStreamClass.class_id)
-        .outerjoin(SchoolStream, SchoolStreamClassSection.school_stream_id == SchoolStream.school_stream_id)
+        .outerjoin(SchoolStream, SchoolStreamClass.school_stream_id == SchoolStream.school_stream_id)  # ← join via class
     )
 
 _SECTION_RESULT = {
@@ -69,11 +76,7 @@ _404 = {"content": {"application/json": {"example": {"code": 404, "message": "Se
 _409 = {"content": {"application/json": {"example": {"code": 409, "message": "Section code 'A' already exists for this class.", "result": {}}}}}
 
 
-# ─── CREATE ───────────────────────────────────
-
-@school_stream_section_router.post(
-    "/create_section",
-    summary="Create a new section",
+@school_stream_section_router.post("/create_section", summary="Create a new section",
     responses={
         201: {"content": {"application/json": {"example": {"code": 201, "message": "Section created successfully.", "result": _SECTION_RESULT}}}},
         409: _409,
@@ -100,11 +103,7 @@ async def create_section(payload: SchoolStreamClassSectionCreate, db: AsyncSessi
     return Result(code=201, message="Section created successfully.", extra=data).http_response()
 
 
-# ─── GET ALL ──────────────────────────────────
-
-@school_stream_section_router.get(
-    "/sectionlist",
-    summary="List all sections (paginated)",
+@school_stream_section_router.get("/sectionlist", summary="List all sections (paginated)",
     responses={
         200: {"content": {"application/json": {"example": {
             "code": 200, "message": "Sections fetched successfully.",
@@ -144,15 +143,12 @@ async def list_sections(
     rows = await db.execute(_joined_stmt().where(*filters).order_by(SchoolStreamClassSection.section_id).offset(offset).limit(limit))
 
     data = {"total": total, "page": page, "limit": limit, "data": [_row_to_dict(r) for r in rows.all()]}
-    await cache.set(key, data, expire=CACHE_TTL)
+    if total > 0:  # only cache when data exists
+        await cache.set(key, data, expire=CACHE_TTL)
     return Result(code=200, message="Sections fetched successfully.", extra=data).http_response()
 
 
-# ─── GET BY ID ────────────────────────────────
-
-@school_stream_section_router.get(
-    "/get_id/{section_id}",
-    summary="Get a section by ID",
+@school_stream_section_router.get("/get_id/{section_id}", summary="Get a section by ID",
     responses={
         200: {"content": {"application/json": {"example": {"code": 200, "message": "Section fetched successfully.", "result": _SECTION_RESULT}}}},
         404: _404,
@@ -173,11 +169,7 @@ async def get_section(section_id: int, db: AsyncSession = Depends(get_db)):
     return Result(code=200, message="Section fetched successfully.", extra=data).http_response()
 
 
-# ─── UPDATE ───────────────────────────────────
-
-@school_stream_section_router.put(
-    "/update_section/{section_id}",
-    summary="Update a section",
+@school_stream_section_router.put("/update_section/{section_id}", summary="Update a section",
     responses={
         200: {"content": {"application/json": {"example": {"code": 200, "message": "Section updated successfully.", "result": _SECTION_RESULT}}}},
         404: _404,
@@ -201,11 +193,7 @@ async def update_section(section_id: int, payload: SchoolStreamClassSectionUpdat
     return Result(code=200, message="Section updated successfully.", extra=data).http_response()
 
 
-# ─── DELETE ───────────────────────────────────
-
-@school_stream_section_router.delete(
-    "/delete_section/{section_id}",
-    summary="Soft delete a section",
+@school_stream_section_router.delete("/delete_section/{section_id}", summary="Soft delete a section",
     responses={
         200: {"content": {"application/json": {"example": {"code": 200, "message": "Section deleted successfully.", "result": {"section_id": 1}}}}},
         404: _404,
@@ -225,11 +213,7 @@ async def delete_section(section_id: int, db: AsyncSession = Depends(get_db)):
     return Result(code=200, message="Section deleted successfully.", extra={"section_id": section_id}).http_response()
 
 
-# ─── DROPDOWN ─────────────────────────────────
-
-@school_stream_section_router.get(
-    "/sections/all",
-    summary="Dropdown: Sections",
+@school_stream_section_router.get("/sections/all", summary="Dropdown: Sections",
     responses={
         200: {"content": {"application/json": {"example": {
             "code": 200, "message": "Dropdown fetched.",
@@ -237,21 +221,45 @@ async def delete_section(section_id: int, db: AsyncSession = Depends(get_db)):
         }}}},
     },
 )
-async def dropdown_sections(class_id: int | None = Query(None), search: str | None = Query(None), db: AsyncSession = Depends(get_db)):
+async def dropdown_sections(
+    class_id:         int | None = Query(None),
+    school_stream_id: int | None = Query(None),
+    search:           str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
     search = clean_search(search)
-    key = f"dropdown:sections:{class_id}:{search}"
+    key = f"dropdown:sections:{class_id}:{school_stream_id}:{search}"
     cached = await cache.get(key)
     if cached:
         return Result(code=200, message="Dropdown fetched (cache).", extra=cached).http_response()
 
-    stmt = select(SchoolStreamClassSection.section_id, SchoolStreamClassSection.section_name).where(SchoolStreamClassSection.status == "active")
+    stmt = (
+        select(
+            SchoolStreamClassSection.section_id,
+            SchoolStreamClassSection.section_code,
+            SchoolStream.stream_name,
+        )
+        .join(SchoolStreamClass, SchoolStreamClassSection.class_id == SchoolStreamClass.class_id)
+        .outerjoin(SchoolStream, SchoolStreamClass.school_stream_id == SchoolStream.school_stream_id)
+        .where(SchoolStreamClassSection.status == "active")
+    )
     if class_id:
         stmt = stmt.where(SchoolStreamClassSection.class_id == class_id)
+    if school_stream_id:
+        stmt = stmt.where(SchoolStreamClass.school_stream_id == school_stream_id)
     if search:
         stmt = stmt.where(SchoolStreamClassSection.section_name.like(f"%{search}%"))
     stmt = stmt.order_by(SchoolStreamClassSection.section_name)
 
     rows = await db.execute(stmt)
-    data = [{"id": r.section_id, "name": r.section_name} for r in rows.all()]
-    await cache.set(key, data, expire=CACHE_TTL)
+    data = [
+        {
+            "section_id":   r.section_id,
+            "section_code": r.section_code,
+            "stream_name":  r.stream_name,
+        }
+        for r in rows.all()
+    ]
+    if data:
+        await cache.set(key, data, expire=CACHE_TTL)
     return Result(code=200, message="Dropdown fetched.", extra=data).http_response()

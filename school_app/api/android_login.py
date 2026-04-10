@@ -8,9 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.session import get_db
 from helper.optmessage import _send_otp_logic, _verify_otp_logic
-from models.auth_models import DeviceRegistration, Session
+from models.auth_models import DeviceRegistration, FcmToken, Session
 from models.employee_models import Employee, Role
-from models.student_models import Student
+from models.student_models import Student, StudentClassMapping
 from response.result import Result
 from schemas.auth_schemas import AndroidLoginRequest, AndroidResendOtpRequest, AndroidVerifyOtpRequest
 from security.valid_session import valid_session
@@ -186,6 +186,42 @@ async def android_verify_otp(
     # 3. Map user_id and role onto the current session
     session.user_id = payload.user_info.user_id
     session.role    = payload.user_info.role
+
+    # 4. If student — upsert fcm_token table with class/section info
+    if payload.user_info.role == "student":
+        # Get student's class + section from mapping
+        mapping_result = await db.execute(
+            select(StudentClassMapping).where(
+                StudentClassMapping.student_id == int(payload.user_info.user_id),
+                StudentClassMapping.is_active == True,
+            )
+        )
+        mapping = mapping_result.scalar_one_or_none()
+
+        # Get fcm_token from device
+        device_result = await db.execute(
+            select(DeviceRegistration).where(DeviceRegistration.id == session.device_id)
+        )
+        device = device_result.scalar_one_or_none()
+
+        if device and device.fcm_token:
+            fcm_result = await db.execute(
+                select(FcmToken).where(FcmToken.fcm_token == device.fcm_token)
+            )
+            fcm_rec = fcm_result.scalar_one_or_none()
+
+            if fcm_rec:
+                fcm_rec.user_id    = int(payload.user_info.user_id)
+                fcm_rec.class_id   = mapping.class_id if mapping else None
+                fcm_rec.section_id = mapping.section_id if mapping else None
+            else:
+                db.add(FcmToken(
+                    user_id    = int(payload.user_info.user_id),
+                    class_id   = mapping.class_id if mapping else None,
+                    section_id = mapping.section_id if mapping else None,
+                    fcm_token  = device.fcm_token,
+                ))
+
     await db.commit()
 
     return Result(

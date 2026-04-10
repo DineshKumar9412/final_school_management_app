@@ -35,6 +35,16 @@ class OtpVerification(Base):
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
 
 
+class FcmToken(Base):
+    __tablename__ = "fcm_token"
+
+    id         = Column(Integer, primary_key=True, autoincrement=True)
+    user_id    = Column(Integer, nullable=True)
+    class_id   = Column(Integer, nullable=True)
+    section_id = Column(Integer, nullable=True)
+    fcm_token  = Column(String(255), unique=True, nullable=True)
+
+
 class Session(Base):
     __tablename__ = "session"
 

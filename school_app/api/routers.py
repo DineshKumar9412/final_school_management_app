@@ -20,6 +20,7 @@ from api.announcement import announcement_router
 from api.student_diary import student_diary_router
 from api.transport import transport_router
 from api.emp_leave_request import emp_leave_router
+from api.custom_alarm import custom_alarm_router
 
 ROUTERS = [
     (auth_router,                  "/api/auth"),
@@ -43,4 +44,5 @@ ROUTERS = [
     (student_diary_router,          "/api/student_diary"),
     (transport_router,              "/api/transport"),
     (emp_leave_router,              "/api/emp_leave"),
+    (custom_alarm_router,           "/api/custom_alarm"),
 ]

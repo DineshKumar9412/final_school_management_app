@@ -10,7 +10,7 @@ class CustomAlarm(Base):
     __tablename__ = "custom_alarm"
 
     id:         Mapped[int]           = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    stream_id:  Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    section_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     class_id:   Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     message:    Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
     alarm_date: Mapped[date]          = mapped_column(Date, nullable=False)

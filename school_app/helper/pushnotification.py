@@ -14,6 +14,23 @@ if not firebase_admin._apps:
     cred = credentials.Certificate(cred_dict)
     firebase_admin.initialize_app(cred)
 
+def send_alarm_notification(device_token: str, message: str, slot_time: str) -> bool:
+    try:
+        msg = messaging.Message(
+            notification=messaging.Notification(
+                title=f"Alarm — {slot_time}",
+                body=message,
+            ),
+            token=device_token,
+        )
+        messaging.send(msg)
+        print("Successfully sent message:", msg)
+        return True
+    except Exception as e:
+        print("ALARM NOTIFICATION ERROR:", e)
+        return False
+
+
 def send_push_notification(device_token: str, otp: str) -> bool:
     try:
         message = messaging.Message(

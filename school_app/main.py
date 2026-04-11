@@ -8,6 +8,7 @@ from middleware.encryption import EncryptionMiddleware
 from middleware.monitoring import MonitoringMiddleware, metrics_endpoint, loki_logger
 from response.result import Result
 from security.valid_session import SessionAuthError
+from scheduler.alarm_scheduler import create_scheduler
 from api.routers import ROUTERS
 
 app = FastAPI(title="FastAPI Production App")
@@ -15,6 +16,16 @@ app = FastAPI(title="FastAPI Production App")
 @app.exception_handler(SessionAuthError)
 async def session_auth_error_handler(request: Request, exc: SessionAuthError):
     return Result(code=exc.code, message=exc.message, extra={}).http_response()
+
+_scheduler = create_scheduler()
+
+@app.on_event("startup")
+async def start_scheduler():
+    _scheduler.start()
+
+@app.on_event("shutdown")
+async def stop_scheduler():
+    _scheduler.shutdown(wait=False)
 
 # API Routers
 for router, prefix in ROUTERS:

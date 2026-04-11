@@ -43,6 +43,7 @@ class FcmToken(Base):
     class_id   = Column(Integer, nullable=True)
     section_id = Column(Integer, nullable=True)
     fcm_token  = Column(String(255), unique=True, nullable=True)
+    status     = Column(Integer, default=0, nullable=False)   # 0=unseen, 1=stopped
 
 
 class Session(Base):

@@ -71,3 +71,4 @@ uvicorn==0.40.0
 WTForms==3.1.2
 passlib[bcrypt]==1.7.4
 bcrypt==4.3.0
+apscheduler==3.10.4

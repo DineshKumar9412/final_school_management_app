@@ -173,14 +173,14 @@ async def stop_alarm(
     return Result(code=200, message="Alarm stopped.").http_response()
 
 ## Test Alarm Working
-from scheduler.alarm_scheduler import fire_alarm_slot, reset_alarm_status
+# from scheduler.alarm_scheduler import fire_alarm_slot, reset_alarm_status
 
-@custom_alarm_router.post("/test-alarm-slot")
-async def test_alarm_slot(slot_time: str = "8.00"):
-    await fire_alarm_slot(slot_time)
-    return Result(code=200, message=f"Slot {slot_time} fired.").http_response()
+# @custom_alarm_router.post("/test-alarm-slot")
+# async def test_alarm_slot(slot_time: str = "8.00"):
+#     await fire_alarm_slot(slot_time)
+#     return Result(code=200, message=f"Slot {slot_time} fired.").http_response()
 
-@custom_alarm_router.post("/test-reset-status")
-async def test_reset_status():
-    await reset_alarm_status()
-    return Result(code=200, message="Status reset done.").http_response()
+# @custom_alarm_router.post("/test-reset-status")
+# async def test_reset_status():
+#     await reset_alarm_status()
+#     return Result(code=200, message="Status reset done.").http_response()

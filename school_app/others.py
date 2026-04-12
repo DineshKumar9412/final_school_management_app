@@ -7,29 +7,79 @@
 # }'
 
 
+# # FCM TOKEN CHECK
+# from firebase_admin import credentials, messaging
+# import firebase_admin
+# from dotenv import load_dotenv
+# import os, json
+
+# # ---------------- Firebase Init ----------------
+
+# load_dotenv()
+
+# firebase_json = os.getenv("FIREBASE_SERVICE_ACCOUNT")
+# cred_dict = json.loads(firebase_json)
+
+# if not firebase_admin._apps:
+#     cred = credentials.Certificate(cred_dict)
+#     firebase_admin.initialize_app(cred)
+
+# # ---------------- Single Device Token ----------------
+
+# DEVICE_TOKEN = (
+
+#     "eumAyLjlSWCBLLNyvq0AFS:APA91bFWI0yrIHPPYfkfknn2ajHfHSdusvv2qEeg14TS2DSfSA9fzAcITe5pEV94eycVOXFTpIa1vJO67mSoEYlNZcYxI1PeEnnfdIS0Lf16T26oXAQpMnc"
+
+# )
+
+# # ---------------- Send Alarm ----------------
+
+# def send_alarm(token: str):
+#     message = messaging.Message(
+#         data={
+#             "action": "START_ALARM",
+#             "title": "⏰ Alarm Test",
+#             "message": "Single device alarm triggered"
+#         },
+#         android=messaging.AndroidConfig(priority="high"),
+#         token=token
+#     )
+
+#     response = messaging.send(message)
+#     print("✅ Alarm sent successfully")
+#     print("Message ID:", response)
+
+# # ---------------- Run ----------------
+
+# if __name__ == "__main__":
+#     send_alarm(DEVICE_TOKEN)
+#     print("🚀 Alarm job completed. Exiting.")
+
+
+
 ## ENCRYPT and DECRYPT
-import os
-from security.crypto import encrypt_json, decrypt_json
+# import os
+# from security.crypto import encrypt_json, decrypt_json
 
-KEY = os.getenv("AES_KEY", "0123456789abcdef").encode("utf-8")   # 16 bytes
-IV  = os.getenv("AES_IV",  "abcdef0123456789").encode("utf-8")   # 16 bytes
+# KEY = os.getenv("AES_KEY", "0123456789abcdef").encode("utf-8")   # 16 bytes
+# IV  = os.getenv("AES_IV",  "abcdef0123456789").encode("utf-8")   # 16 bytes
 
 
-# ── ENCRYPT ────────────────────────────────────────────────────────────────────
-data = {
-    "mobile": "7771234567",
-    "device_id": "device-abc-001"
-}
-encrypted = encrypt_json(data, KEY, IV)
-print("Encrypted:", encrypted)
+# # ── ENCRYPT ────────────────────────────────────────────────────────────────────
+# data = {
+#     "mobile": "7771234567",
+#     "device_id": "device-abc-001"
+# }
+# encrypted = encrypt_json(data, KEY, IV)
+# print("Encrypted:", encrypted)
 
-# ── DECRYPT ────────────────────────────────────────────────────────────────────
-decrypted = decrypt_json(encrypted, KEY, IV)
-print("Decrypted:", decrypted)
+# # ── DECRYPT ────────────────────────────────────────────────────────────────────
+# decrypted = decrypt_json(encrypted, KEY, IV)
+# print("Decrypted:", decrypted)
 
-import json
-payload_for_request = json.dumps({"payload": encrypted})
-print("Request body:", payload_for_request)
+# import json
+# payload_for_request = json.dumps({"payload": encrypted})
+# print("Request body:", payload_for_request)
 
 ## others 
 ## Example Call

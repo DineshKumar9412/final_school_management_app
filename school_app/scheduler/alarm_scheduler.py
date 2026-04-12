@@ -10,18 +10,19 @@ from helper.pushnotification import send_alarm_notification
 from models.auth_models import FcmToken
 from models.custom_alarm_models import CustomAlarm
 
-# Slot definitions: (hour, minute, slot_time_str)
-# slot_time_str must match what is stored in custom_alarm.slot_time
+# Slot definitions: (hour, minute, unique_job_id, query_slot)
+# Clients only create alarms with slot_time = "8.00" / "9.00" / "10.00".
+# The scheduler fires three reminders per slot (:00, :05, :10) all querying the same parent slot.
 ALARM_SLOTS = [
-    (8,  0,  "8.00"),
-    (8,  5,  "8.05"),
-    (8,  10, "8.10"),
-    (9,  0,  "9.00"),
-    (9,  5,  "9.05"),
-    (9,  10, "9.10"),
-    (10, 0,  "10.00"),
-    (10, 5,  "10.05"),
-    (10, 10, "10.10"),
+    (8,  22,  "8_00_1", "8.00"),
+    (8,  25,  "8_00_2", "8.00"),
+    (8,  30, "8_00_3", "8.00"),
+    (9,  0,  "9_00_1", "9.00"),
+    (9,  5,  "9_00_2", "9.00"),
+    (9,  10, "9_00_3", "9.00"),
+    (10, 0,  "10_00_1", "10.00"),
+    (10, 5,  "10_00_2", "10.00"),
+    (10, 10, "10_00_3", "10.00"),
 ]
 
 
@@ -79,23 +80,23 @@ async def fire_alarm_slot(slot_time: str) -> None:
 # ── Build and return scheduler ────────────────────────────────────────────────
 
 def create_scheduler() -> AsyncIOScheduler:
-    scheduler = AsyncIOScheduler()
+    scheduler = AsyncIOScheduler(timezone="Asia/Kolkata")
 
     # Reset job — 7:50 AM daily
     scheduler.add_job(
         reset_alarm_status,
-        CronTrigger(hour=7, minute=50),
+        CronTrigger(hour=8, minute=20, timezone="Asia/Kolkata"),
         id="reset_alarm_status",
         replace_existing=True,
     )
 
     # Slot jobs
-    for hour, minute, slot_str in ALARM_SLOTS:
+    for hour, minute, job_id, query_slot in ALARM_SLOTS:
         scheduler.add_job(
             fire_alarm_slot,
-            CronTrigger(hour=hour, minute=minute),
-            id=f"alarm_slot_{slot_str}",
-            args=[slot_str],
+            CronTrigger(hour=hour, minute=minute, timezone="Asia/Kolkata"),
+            id=f"alarm_slot_{job_id}",
+            args=[query_slot],
             replace_existing=True,
         )
 

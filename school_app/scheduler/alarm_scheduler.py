@@ -14,9 +14,9 @@ from models.custom_alarm_models import CustomAlarm
 # Clients only create alarms with slot_time = "8.00" / "9.00" / "10.00".
 # The scheduler fires three reminders per slot (:00, :05, :10) all querying the same parent slot.
 ALARM_SLOTS = [
-    (8,  22,  "8_00_1", "8.00"),
-    (8,  25,  "8_00_2", "8.00"),
-    (8,  30, "8_00_3", "8.00"),
+    (8,  0,  "8_00_1", "8.00"),
+    (8,  5,  "8_00_2", "8.00"),
+    (8,  10, "8_00_3", "8.00"),
     (9,  0,  "9_00_1", "9.00"),
     (9,  5,  "9_00_2", "9.00"),
     (9,  10, "9_00_3", "9.00"),
@@ -85,7 +85,7 @@ def create_scheduler() -> AsyncIOScheduler:
     # Reset job — 7:50 AM daily
     scheduler.add_job(
         reset_alarm_status,
-        CronTrigger(hour=8, minute=20, timezone="Asia/Kolkata"),
+        CronTrigger(hour=7, minute=50, timezone="Asia/Kolkata"),
         id="reset_alarm_status",
         replace_existing=True,
     )

@@ -28,10 +28,9 @@
 
 # DEVICE_TOKEN = (
 
-#     "eumAyLjlSWCBLLNyvq0AFS:APA91bFWI0yrIHPPYfkfknn2ajHfHSdusvv2qEeg14TS2DSfSA9fzAcITe5pEV94eycVOXFTpIa1vJO67mSoEYlNZcYxI1PeEnnfdIS0Lf16T26oXAQpMnc"
+#     "dzH1T6H-SxmpU6L90bmUoz:APA91bEkqjKokzBQY9K4keB-upw10c3lxkca0MStCobr8oRGu0qyKqGsyfG18mfVGH6ZoizOMG7ICdEyiqLJYm7zeYYQN6IUNt66sUwVNBchDHS-P-umx90"
 
 # )
-
 # # ---------------- Send Alarm ----------------
 
 # def send_alarm(token: str):

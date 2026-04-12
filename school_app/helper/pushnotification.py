@@ -17,14 +17,16 @@ if not firebase_admin._apps:
 def send_alarm_notification(device_token: str, message: str, slot_time: str) -> bool:
     try:
         msg = messaging.Message(
-            notification=messaging.Notification(
-                title=f"Alarm — {slot_time}",
-                body=message,
-            ),
+            data={
+                "action" : "START_ALARM",
+                "title"  : f"Alarm — {slot_time}",
+                "message": message,
+            },
+            android=messaging.AndroidConfig(priority="high"),
             token=device_token,
         )
-        messaging.send(msg)
-        print("Successfully sent message:", msg)
+        response = messaging.send(msg)
+        print("Alarm sent successfully. Message ID:", response)
         return True
     except Exception as e:
         print("ALARM NOTIFICATION ERROR:", e)

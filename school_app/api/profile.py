@@ -18,6 +18,10 @@ async def get_profile(
     session: Session = Depends(valid_session),
     db: AsyncSession = Depends(get_db),
 ):
+    
+    if not session.user_id:
+        return Result(code=401, message="Session missing user info.").http_response()
+
     result = await db.execute(
         select(Employee).where(
             Employee.id == int(session.user_id),

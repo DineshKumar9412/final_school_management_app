@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from database.redis_cache import cache
 from database.session import get_db
 from helper.optmessage import _send_otp_logic, _verify_otp_logic
 from models.auth_models import DeviceRegistration, FcmToken, Session
@@ -205,24 +206,40 @@ async def android_verify_otp(
         device = device_result.scalar_one_or_none()
 
         if device and device.fcm_token:
+            student_id = int(payload.user_info.user_id)
             fcm_result = await db.execute(
-                select(FcmToken).where(FcmToken.fcm_token == device.fcm_token)
+                select(FcmToken).where(FcmToken.user_id == student_id)
             )
             fcm_rec = fcm_result.scalar_one_or_none()
 
             if fcm_rec:
-                fcm_rec.user_id    = int(payload.user_info.user_id)
+                # User already has a row — update token and class/section
+                fcm_rec.fcm_token  = device.fcm_token
                 fcm_rec.class_id   = mapping.class_id if mapping else None
                 fcm_rec.section_id = mapping.section_id if mapping else None
             else:
                 db.add(FcmToken(
-                    user_id    = int(payload.user_info.user_id),
+                    user_id    = student_id,
                     class_id   = mapping.class_id if mapping else None,
                     section_id = mapping.section_id if mapping else None,
                     fcm_token  = device.fcm_token,
                 ))
 
     await db.commit()
+
+    # Update Redis cache with the now-populated user_id and role
+    ttl_seconds = int((session.valid_till - datetime.utcnow()).total_seconds())
+    await cache.set(
+        key    = f"session:{session.client_key}",
+        value  = {
+            "id"        : session.id,
+            "device_id" : session.device_id,
+            "user_id"   : session.user_id,
+            "role"      : session.role,
+            "valid_till": session.valid_till.isoformat(),
+        },
+        expire = max(ttl_seconds, 1),
+    )
 
     return Result(
         code    = 200,

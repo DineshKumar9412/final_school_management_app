@@ -222,3 +222,56 @@
 #         "total": len(files),
 #         "data":  files,
 #     }).http_response()
+
+
+
+# # api/images.py
+# from datetime import date
+# from typing import Optional
+
+# from fastapi import APIRouter, Depends
+# from sqlalchemy import select, update
+# from sqlalchemy.ext.asyncio import AsyncSession
+
+# from database.session import get_db
+# from models.auth_models import FcmToken, Session
+# from models.custom_alarm_models import CustomAlarm
+# from response.result import Result
+# from schemas.custom_alarm_schemas import CustomAlarmCreate, CustomAlarmUpdate
+# from security.valid_session import valid_session
+
+# image_router = APIRouter(tags=["ANDROID APIS"])
+
+# @image_router.get("/banner")
+# async def register_device(
+#     session: Session = Depends(valid_session),
+#     db: AsyncSession = Depends(get_db),
+# ):
+#     url = [
+#         "https://images.unsplash.com/photo-1497633762265-9d179a990aa6",
+#         "https://images.unsplash.com/photo-1571260899304-425eee4c7efc",
+#         "https://images.unsplash.com/photo-1588072432836-e10032774350"
+#     ]
+
+#     return Result(
+#         code=200,
+#         message="SUCCESS",
+#         extra={"image_list": url},
+#     ).http_response()
+
+# @image_router.get("/gallery")
+# async def register_device(
+#     session: Session = Depends(valid_session),
+#     db: AsyncSession = Depends(get_db),
+# ):
+#     url = [
+#         "https://images.unsplash.com/photo-1580582932707-520aed937b7b",
+#         "https://images.unsplash.com/photo-1577896851231-70ef18881754",
+#         "https://images.unsplash.com/photo-1596495578065-6e0763fa1178",
+#         "https://images.unsplash.com/photo-1606326608606-aa0b62935f2b"
+#     ]
+#     return Result(
+#         code=200,
+#         message="SUCCESS",
+#         extra={"image_list": url},
+#     ).http_response()

@@ -48,7 +48,7 @@ async def register_device(
 
     message = "Device registered successfully" if is_new else "Device updated successfully"
     return Result(
-        code=201 if is_new else 200,
+        code=200,
         message=message,
         extra={"device_id": device.device_id, "is_new": is_new},
     ).http_response()

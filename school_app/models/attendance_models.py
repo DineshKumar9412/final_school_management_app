@@ -10,6 +10,7 @@ import enum
 class AttendanceStatus(str, enum.Enum):
     P = "P"  # Present
     A = "A"  # Absent
+    L = "L"  # Leave
 
 
 class EmployeeAttendance(Base):

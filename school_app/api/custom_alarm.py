@@ -13,7 +13,7 @@ from response.result import Result
 from schemas.custom_alarm_schemas import CustomAlarmCreate, CustomAlarmUpdate
 from security.valid_session import valid_session
 
-custom_alarm_router = APIRouter(tags=["ANDROID APIS"])
+custom_alarm_router = APIRouter(tags=["ANDROID APIS ALARM"])
 
 
 def _alarm_to_dict(alarm: CustomAlarm) -> dict:

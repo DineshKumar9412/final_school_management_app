@@ -1,6 +1,6 @@
 # models/notification_models.py
-from sqlalchemy import String, Integer, Text, ForeignKey, BigInteger, func, LargeBinary
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import String, Integer, ForeignKey, BigInteger, func, LargeBinary
+from sqlalchemy.orm import Mapped, mapped_column
 from database.base import Base
 from datetime import datetime
 from typing import Optional

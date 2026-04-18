@@ -36,7 +36,7 @@ def clean_search(s: str | None) -> str | None:
 # VEHICLE DETAILS
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _vd_key(vid: int)  -> str: return f"vehicle_details:{vid}"
+def _vd_key(vid: int) -> str: return f"vehicle_details:{vid}"
 def _vd_list_key(page, limit, search, status) -> str:
     return f"vehicle_details:list:{page}:{limit}:{search}:{status}"
 
@@ -49,11 +49,34 @@ def _vd_to_dict(v: VehicleDetails) -> dict:
         "created_at": v.created_at.isoformat(), "updated_at": v.updated_at.isoformat(),
     }
 
-_VD_EX = {"id": 1, "vehicle_no": "TN01AB1234", "vehicle_capacity": 40,
-           "vehicle_reg_no": "REG001", "status": "A",
-           "driver_mob_no": "9876543210", "helper_mob_no": "9876543211",
-           "created_at": "2024-01-01T10:00:00", "updated_at": "2024-01-01T10:00:00"}
+_VD_EX  = {"id": 1, "vehicle_no": "TN01AB1234", "vehicle_capacity": 40, "vehicle_reg_no": "REG001",
+            "status": "A", "driver_mob_no": "9876543210", "helper_mob_no": "9876543211",
+            "created_at": "2024-01-01T10:00:00", "updated_at": "2024-01-01T10:00:00"}
 _VD_404 = {"content": {"application/json": {"example": {"code": 404, "message": "Vehicle not found.", "result": {}}}}}
+
+
+@transport_router.get("/vehicle/all", summary="Dropdown: Vehicles")
+async def dropdown_vehicles(
+    search: str | None = Query(None, description="Search by vehicle_no or vehicle_reg_no"),
+    db: AsyncSession = Depends(get_db),
+):
+    key = f"dropdown:vehicles:{search}"
+    cached = await cache.get(key)
+    if cached:
+        return Result(code=200, message="Dropdown fetched (cache).", extra=cached).http_response()
+
+    stmt = select(VehicleDetails.id, VehicleDetails.vehicle_no, VehicleDetails.vehicle_reg_no)\
+        .where(VehicleDetails.status == "A")
+    if search:
+        stmt = stmt.where(
+            VehicleDetails.vehicle_no.like(f"%{search}%") |
+            VehicleDetails.vehicle_reg_no.like(f"%{search}%")
+        )
+    rows = (await db.execute(stmt.order_by(VehicleDetails.vehicle_no))).all()
+    data = [{"id": r.id, "vehicle_no": r.vehicle_no, "vehicle_reg_no": r.vehicle_reg_no} for r in rows]
+    if data:
+        await cache.set(key, data, expire=CACHE_TTL)
+    return Result(code=200, message="Dropdown fetched.", extra=data).http_response()
 
 
 @transport_router.post("/vehicle/create", summary="Create a vehicle",
@@ -64,6 +87,7 @@ async def create_vehicle(payload: VehicleDetailsCreate, db: AsyncSession = Depen
     data = _vd_to_dict(obj)
     await cache.set(_vd_key(obj.id), data, expire=CACHE_TTL)
     await cache.delete_pattern("vehicle_details:list:*")
+    await cache.delete_pattern("dropdown:vehicles:*")
     return Result(code=201, message="Vehicle created successfully.", extra=data).http_response()
 
 
@@ -124,6 +148,7 @@ async def update_vehicle(vehicle_id: int, payload: VehicleDetailsUpdate, db: Asy
     data = _vd_to_dict(obj)
     await cache.set(_vd_key(vehicle_id), data, expire=CACHE_TTL)
     await cache.delete_pattern("vehicle_details:list:*")
+    await cache.delete_pattern("dropdown:vehicles:*")
     return Result(code=200, message="Vehicle updated successfully.", extra=data).http_response()
 
 
@@ -135,6 +160,7 @@ async def delete_vehicle(vehicle_id: int, db: AsyncSession = Depends(get_db)):
     await db.delete(obj); await db.commit()
     await cache.delete(_vd_key(vehicle_id))
     await cache.delete_pattern("vehicle_details:list:*")
+    await cache.delete_pattern("dropdown:vehicles:*")
     return Result(code=200, message="Vehicle deleted successfully.", extra={"id": vehicle_id}).http_response()
 
 
@@ -160,6 +186,26 @@ def _rt_to_dict(r: Routes) -> dict:
 _RT_404 = {"content": {"application/json": {"example": {"code": 404, "message": "Route not found.", "result": {}}}}}
 
 
+@transport_router.get("/route/all", summary="Dropdown: Routes")
+async def dropdown_routes(
+    search: str | None = Query(None, description="Search by route name"),
+    db: AsyncSession = Depends(get_db),
+):
+    key = f"dropdown:routes:{search}"
+    cached = await cache.get(key)
+    if cached:
+        return Result(code=200, message="Dropdown fetched (cache).", extra=cached).http_response()
+
+    stmt = select(Routes.id, Routes.name, Routes.vehicle_no).where(Routes.status == "A")
+    if search:
+        stmt = stmt.where(Routes.name.like(f"%{search}%"))
+    rows = (await db.execute(stmt.order_by(Routes.name))).all()
+    data = [{"id": r.id, "name": r.name, "vehicle_no": r.vehicle_no} for r in rows]
+    if data:
+        await cache.set(key, data, expire=CACHE_TTL)
+    return Result(code=200, message="Dropdown fetched.", extra=data).http_response()
+
+
 @transport_router.post("/route/create", summary="Create a route",
     responses={201: {"content": {"application/json": {"example": {"code": 201, "message": "Route created successfully."}}}}})
 async def create_route(payload: RoutesCreate, db: AsyncSession = Depends(get_db)):
@@ -168,6 +214,7 @@ async def create_route(payload: RoutesCreate, db: AsyncSession = Depends(get_db)
     data = _rt_to_dict(obj)
     await cache.set(_rt_key(obj.id), data, expire=CACHE_TTL)
     await cache.delete_pattern("routes:list:*")
+    await cache.delete_pattern("dropdown:routes:*")
     return Result(code=201, message="Route created successfully.", extra=data).http_response()
 
 
@@ -224,6 +271,7 @@ async def update_route(route_id: int, payload: RoutesUpdate, db: AsyncSession = 
     data = _rt_to_dict(obj)
     await cache.set(_rt_key(route_id), data, expire=CACHE_TTL)
     await cache.delete_pattern("routes:list:*")
+    await cache.delete_pattern("dropdown:routes:*")
     return Result(code=200, message="Route updated successfully.", extra=data).http_response()
 
 
@@ -235,6 +283,7 @@ async def delete_route(route_id: int, db: AsyncSession = Depends(get_db)):
     await db.delete(obj); await db.commit()
     await cache.delete(_rt_key(route_id))
     await cache.delete_pattern("routes:list:*")
+    await cache.delete_pattern("dropdown:routes:*")
     return Result(code=200, message="Route deleted successfully.", extra={"id": route_id}).http_response()
 
 
@@ -252,31 +301,76 @@ def _vrm_to_dict(m: VehicleRoutesMap, route_name: str | None, vehicle_no: str | 
         "vehicle_id": m.vehicle_id, "vehicle_no": vehicle_no,
         "driver_name": m.driver_name, "helper_name": m.helper_name,
         "driver_mob_no": m.driver_mob_no, "helper_mob_no": m.helper_mob_no,
-        "created_at": m.created_at.isoformat(), "updated_at": m.updated_at.isoformat(),
+        "created_at": m.created_at.isoformat() if m.created_at else None,
+        "updated_at": m.updated_at.isoformat() if m.updated_at else None,
     }
 
 async def _vrm_labels(db, route_id, vehicle_id):
     route_name = vehicle_no = None
     if route_id:
-        row = (await db.execute(select(Routes.name).where(Routes.id == route_id))).scalar_one_or_none()
-        route_name = row
+        route_name = (await db.execute(select(Routes.name).where(Routes.id == route_id))).scalar_one_or_none()
     if vehicle_id:
-        row = (await db.execute(select(VehicleDetails.vehicle_no).where(VehicleDetails.id == vehicle_id))).scalar_one_or_none()
-        vehicle_no = row
+        vehicle_no = (await db.execute(select(VehicleDetails.vehicle_no).where(VehicleDetails.id == vehicle_id))).scalar_one_or_none()
     return route_name, vehicle_no
 
 _VRM_404 = {"content": {"application/json": {"example": {"code": 404, "message": "Vehicle route map not found.", "result": {}}}}}
 
 
+@transport_router.get("/vehicle_route_map/all", summary="Dropdown: Vehicle-Route Mappings")
+async def dropdown_vehicle_route_maps(
+    route_id:   int | None = Query(None, description="Filter by route ID"),
+    vehicle_id: int | None = Query(None, description="Filter by vehicle ID"),
+    db: AsyncSession = Depends(get_db),
+):
+    key = f"dropdown:vehicle_route_map:{route_id}:{vehicle_id}"
+    cached = await cache.get(key)
+    if cached:
+        return Result(code=200, message="Dropdown fetched (cache).", extra=cached).http_response()
+
+    stmt = select(
+        VehicleRoutesMap.id, VehicleRoutesMap.route_id, VehicleRoutesMap.vehicle_id,
+        VehicleRoutesMap.driver_name, Routes.name.label("route_name"), VehicleDetails.vehicle_no,
+    )\
+        .outerjoin(Routes,         VehicleRoutesMap.route_id   == Routes.id)\
+        .outerjoin(VehicleDetails, VehicleRoutesMap.vehicle_id == VehicleDetails.id)
+    if route_id:
+        stmt = stmt.where(VehicleRoutesMap.route_id == route_id)
+    if vehicle_id:
+        stmt = stmt.where(VehicleRoutesMap.vehicle_id == vehicle_id)
+    rows = (await db.execute(stmt.order_by(VehicleRoutesMap.id))).all()
+    data = [
+        {"id": r.id, "route_id": r.route_id, "route_name": r.route_name,
+         "vehicle_id": r.vehicle_id, "vehicle_no": r.vehicle_no, "driver_name": r.driver_name}
+        for r in rows
+    ]
+    if data:
+        await cache.set(key, data, expire=CACHE_TTL)
+    return Result(code=200, message="Dropdown fetched.", extra=data).http_response()
+
+
 @transport_router.post("/vehicle_route_map/create", summary="Create a vehicle-route mapping",
-    responses={201: {"content": {"application/json": {"example": {"code": 201, "message": "Mapping created successfully."}}}}})
+    responses={201: {"content": {"application/json": {"example": {"code": 201, "message": "Mapping created successfully."}}}},
+               409: {"content": {"application/json": {"example": {"code": 409, "message": "This route is already mapped to this vehicle.", "result": {}}}}}})
 async def create_vehicle_route_map(payload: VehicleRoutesMapCreate, db: AsyncSession = Depends(get_db)):
+    if payload.route_id and payload.vehicle_id:
+        exists = (await db.execute(
+            select(VehicleRoutesMap.id).where(
+                VehicleRoutesMap.route_id   == payload.route_id,
+                VehicleRoutesMap.vehicle_id == payload.vehicle_id,
+            )
+        )).scalar_one_or_none()
+        if exists:
+            return Result(code=409, message="This route is already mapped to this vehicle.", extra={}).http_response()
+
     obj = VehicleRoutesMap(**payload.model_dump())
     db.add(obj); await db.commit(); await db.refresh(obj)
+    # re-fetch to ensure server defaults (created_at, updated_at) are loaded
+    obj = (await db.execute(select(VehicleRoutesMap).where(VehicleRoutesMap.id == obj.id))).scalar_one()
     route_name, vehicle_no = await _vrm_labels(db, obj.route_id, obj.vehicle_id)
     data = _vrm_to_dict(obj, route_name, vehicle_no)
     await cache.set(_vrm_key(obj.id), data, expire=CACHE_TTL)
     await cache.delete_pattern("vehicle_routes_map:list:*")
+    await cache.delete_pattern("dropdown:vehicle_route_map:*")
     return Result(code=201, message="Mapping created successfully.", extra=data).http_response()
 
 
@@ -295,29 +389,21 @@ async def list_vehicle_route_maps(
 
     offset = (page - 1) * limit
     stmt   = select(VehicleRoutesMap)
-    if route_id:
-        stmt = stmt.where(VehicleRoutesMap.route_id == route_id)
-    if vehicle_id:
-        stmt = stmt.where(VehicleRoutesMap.vehicle_id == vehicle_id)
+    if route_id:   stmt = stmt.where(VehicleRoutesMap.route_id   == route_id)
+    if vehicle_id: stmt = stmt.where(VehicleRoutesMap.vehicle_id == vehicle_id)
     total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
     rows  = (await db.execute(stmt.order_by(VehicleRoutesMap.id.desc()).offset(offset).limit(limit))).scalars().all()
 
-    # batch labels
-    r_ids = {m.route_id   for m in rows if m.route_id}
+    r_ids = {m.route_id for m in rows if m.route_id}
     v_ids = {m.vehicle_id for m in rows if m.vehicle_id}
-    route_map   = {}
-    vehicle_map = {}
+    route_map = vehicle_map = {}
     if r_ids:
-        r_rows = (await db.execute(select(Routes.id, Routes.name).where(Routes.id.in_(r_ids)))).all()
-        route_map = {r.id: r.name for r in r_rows}
+        route_map   = {r.id: r.name       for r in (await db.execute(select(Routes.id, Routes.name).where(Routes.id.in_(r_ids)))).all()}
     if v_ids:
-        v_rows = (await db.execute(select(VehicleDetails.id, VehicleDetails.vehicle_no).where(VehicleDetails.id.in_(v_ids)))).all()
-        vehicle_map = {v.id: v.vehicle_no for v in v_rows}
+        vehicle_map = {v.id: v.vehicle_no  for v in (await db.execute(select(VehicleDetails.id, VehicleDetails.vehicle_no).where(VehicleDetails.id.in_(v_ids)))).all()}
 
-    data = {
-        "total": total, "page": page, "limit": limit,
-        "data": [_vrm_to_dict(m, route_map.get(m.route_id), vehicle_map.get(m.vehicle_id)) for m in rows],
-    }
+    data = {"total": total, "page": page, "limit": limit,
+            "data": [_vrm_to_dict(m, route_map.get(m.route_id), vehicle_map.get(m.vehicle_id)) for m in rows]}
     if total > 0:
         await cache.set(key, data, expire=CACHE_TTL)
     return Result(code=200, message="Mappings fetched successfully.", extra=data).http_response()
@@ -350,6 +436,7 @@ async def update_vehicle_route_map(map_id: int, payload: VehicleRoutesMapUpdate,
     data = _vrm_to_dict(obj, route_name, vehicle_no)
     await cache.set(_vrm_key(map_id), data, expire=CACHE_TTL)
     await cache.delete_pattern("vehicle_routes_map:list:*")
+    await cache.delete_pattern("dropdown:vehicle_route_map:*")
     return Result(code=200, message="Mapping updated successfully.", extra=data).http_response()
 
 
@@ -361,6 +448,7 @@ async def delete_vehicle_route_map(map_id: int, db: AsyncSession = Depends(get_d
     await db.delete(obj); await db.commit()
     await cache.delete(_vrm_key(map_id))
     await cache.delete_pattern("vehicle_routes_map:list:*")
+    await cache.delete_pattern("dropdown:vehicle_route_map:*")
     return Result(code=200, message="Mapping deleted successfully.", extra={"id": map_id}).http_response()
 
 
@@ -375,11 +463,11 @@ def _ts_list_key(page, limit, vehicle_id, class_id, section_id, student_id, grou
 def _ts_to_dict(t: TransportationStudent, vehicle_no, class_code, section_name, student_name, group_name) -> dict:
     return {
         "id": t.id,
-        "vehicle_id": t.vehicle_id, "vehicle_no": vehicle_no,
-        "class_id":   t.class_id,   "class_code": class_code,
-        "section_id": t.section_id, "section_name": section_name,
-        "student_id": t.student_id, "student_name": student_name,
-        "group_id":   t.group_id,   "group_name": group_name,
+        "vehicle_id": t.vehicle_id, "vehicle_no":    vehicle_no,
+        "class_id":   t.class_id,   "class_code":    class_code,
+        "section_id": t.section_id, "section_name":  section_name,
+        "student_id": t.student_id, "student_name":  student_name,
+        "group_id":   t.group_id,   "group_name":    group_name,
         "session_yr": t.session_yr,
         "created_at": t.created_at.isoformat(), "updated_at": t.updated_at.isoformat(),
     }
@@ -387,28 +475,76 @@ def _ts_to_dict(t: TransportationStudent, vehicle_no, class_code, section_name, 
 _TS_404 = {"content": {"application/json": {"example": {"code": 404, "message": "Transportation student not found.", "result": {}}}}}
 
 
+@transport_router.get("/transportation_student/all", summary="Dropdown: Transportation Students")
+async def dropdown_transportation_students(
+    vehicle_id: int | None = Query(None, description="Filter by vehicle ID"),
+    class_id:   int | None = Query(None, description="Filter by class ID"),
+    section_id: int | None = Query(None, description="Filter by section ID"),
+    session_yr: str | None = Query(None, description="Filter by session year e.g. 2024-25"),
+    db: AsyncSession = Depends(get_db),
+):
+    key = f"dropdown:transportation_student:{vehicle_id}:{class_id}:{section_id}:{session_yr}"
+    cached = await cache.get(key)
+    if cached:
+        return Result(code=200, message="Dropdown fetched (cache).", extra=cached).http_response()
+
+    stmt = select(
+        TransportationStudent.id, TransportationStudent.student_id,
+        TransportationStudent.vehicle_id, TransportationStudent.session_yr,
+        Student.first_name, Student.last_name, VehicleDetails.vehicle_no,
+    )\
+        .outerjoin(Student,        TransportationStudent.student_id == Student.student_id)\
+        .outerjoin(VehicleDetails, TransportationStudent.vehicle_id == VehicleDetails.id)
+    if vehicle_id: stmt = stmt.where(TransportationStudent.vehicle_id == vehicle_id)
+    if class_id:   stmt = stmt.where(TransportationStudent.class_id   == class_id)
+    if section_id: stmt = stmt.where(TransportationStudent.section_id == section_id)
+    if session_yr: stmt = stmt.where(TransportationStudent.session_yr == session_yr)
+    rows = (await db.execute(stmt.order_by(TransportationStudent.id))).all()
+    data = [
+        {"id": r.id, "student_id": r.student_id,
+         "student_name": f"{r.first_name or ''} {r.last_name or ''}".strip(),
+         "vehicle_id": r.vehicle_id, "vehicle_no": r.vehicle_no, "session_yr": r.session_yr}
+        for r in rows
+    ]
+    if data:
+        await cache.set(key, data, expire=CACHE_TTL)
+    return Result(code=200, message="Dropdown fetched.", extra=data).http_response()
+
+
 @transport_router.post("/transportation_student/create", summary="Assign student to vehicle",
-    responses={201: {"content": {"application/json": {"example": {"code": 201, "message": "Transportation student created successfully."}}}}})
+    responses={201: {"content": {"application/json": {"example": {"code": 201, "message": "Transportation student created successfully."}}}},
+               409: {"content": {"application/json": {"example": {"code": 409, "message": "Student is already assigned to a vehicle for this session.", "result": {}}}}}})
 async def create_transportation_student(payload: TransportationStudentCreate, db: AsyncSession = Depends(get_db)):
+    if payload.student_id and payload.session_yr:
+        exists = (await db.execute(
+            select(TransportationStudent.id).where(
+                TransportationStudent.student_id == payload.student_id,
+                TransportationStudent.session_yr == payload.session_yr,
+            )
+        )).scalar_one_or_none()
+        if exists:
+            return Result(code=409, message="Student is already assigned to a vehicle for this session.", extra={}).http_response()
+
     obj = TransportationStudent(**payload.model_dump())
     db.add(obj); await db.commit(); await db.refresh(obj)
 
     vehicle_no = class_code = section_name = student_name = group_name = None
     if obj.vehicle_id:
-        vehicle_no = (await db.execute(select(VehicleDetails.vehicle_no).where(VehicleDetails.id == obj.vehicle_id))).scalar_one_or_none()
+        vehicle_no   = (await db.execute(select(VehicleDetails.vehicle_no).where(VehicleDetails.id == obj.vehicle_id))).scalar_one_or_none()
     if obj.class_id:
-        class_code = (await db.execute(select(SchoolStreamClass.class_code).where(SchoolStreamClass.class_id == obj.class_id))).scalar_one_or_none()
+        class_code   = (await db.execute(select(SchoolStreamClass.class_code).where(SchoolStreamClass.class_id == obj.class_id))).scalar_one_or_none()
     if obj.section_id:
         section_name = (await db.execute(select(SchoolStreamClassSection.section_name).where(SchoolStreamClassSection.section_id == obj.section_id))).scalar_one_or_none()
     if obj.student_id:
         row = (await db.execute(select(Student.first_name, Student.last_name).where(Student.student_id == obj.student_id))).one_or_none()
         student_name = f"{row.first_name} {row.last_name}".strip() if row else None
     if obj.group_id:
-        group_name = (await db.execute(select(SchoolGroup.group_name).where(SchoolGroup.school_group_id == obj.group_id))).scalar_one_or_none()
+        group_name   = (await db.execute(select(SchoolGroup.group_name).where(SchoolGroup.school_group_id == obj.group_id))).scalar_one_or_none()
 
     data = _ts_to_dict(obj, vehicle_no, class_code, section_name, student_name, group_name)
     await cache.set(_ts_key(obj.id), data, expire=CACHE_TTL)
     await cache.delete_pattern("transportation_student:list:*")
+    await cache.delete_pattern("dropdown:transportation_student:*")
     return Result(code=201, message="Transportation student created successfully.", extra=data).http_response()
 
 
@@ -431,39 +567,36 @@ async def list_transportation_students(
 
     offset = (page - 1) * limit
     stmt   = select(TransportationStudent)
-    if vehicle_id:  stmt = stmt.where(TransportationStudent.vehicle_id  == vehicle_id)
-    if class_id:    stmt = stmt.where(TransportationStudent.class_id    == class_id)
-    if section_id:  stmt = stmt.where(TransportationStudent.section_id  == section_id)
-    if student_id:  stmt = stmt.where(TransportationStudent.student_id  == student_id)
-    if group_id:    stmt = stmt.where(TransportationStudent.group_id    == group_id)
-    if session_yr:  stmt = stmt.where(TransportationStudent.session_yr  == session_yr)
+    if vehicle_id: stmt = stmt.where(TransportationStudent.vehicle_id == vehicle_id)
+    if class_id:   stmt = stmt.where(TransportationStudent.class_id   == class_id)
+    if section_id: stmt = stmt.where(TransportationStudent.section_id == section_id)
+    if student_id: stmt = stmt.where(TransportationStudent.student_id == student_id)
+    if group_id:   stmt = stmt.where(TransportationStudent.group_id   == group_id)
+    if session_yr: stmt = stmt.where(TransportationStudent.session_yr == session_yr)
 
     total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
     rows  = (await db.execute(stmt.order_by(TransportationStudent.id.desc()).offset(offset).limit(limit))).scalars().all()
 
-    # batch labels
-    v_ids   = {t.vehicle_id  for t in rows if t.vehicle_id}
-    c_ids   = {t.class_id    for t in rows if t.class_id}
-    sec_ids = {t.section_id  for t in rows if t.section_id}
-    s_ids   = {t.student_id  for t in rows if t.student_id}
-    g_ids   = {t.group_id    for t in rows if t.group_id}
+    v_ids   = {t.vehicle_id for t in rows if t.vehicle_id}
+    c_ids   = {t.class_id   for t in rows if t.class_id}
+    sec_ids = {t.section_id for t in rows if t.section_id}
+    s_ids   = {t.student_id for t in rows if t.student_id}
+    g_ids   = {t.group_id   for t in rows if t.group_id}
 
-    v_map = s_map = c_map = sec_map = g_map = {}
+    v_map = c_map = sec_map = s_map = g_map = {}
     if v_ids:
-        v_map = {r.id: r.vehicle_no for r in (await db.execute(select(VehicleDetails.id, VehicleDetails.vehicle_no).where(VehicleDetails.id.in_(v_ids)))).all()}
+        v_map   = {r.id: r.vehicle_no   for r in (await db.execute(select(VehicleDetails.id,   VehicleDetails.vehicle_no).where(VehicleDetails.id.in_(v_ids)))).all()}
     if c_ids:
-        c_map = {r.class_id: r.class_code for r in (await db.execute(select(SchoolStreamClass.class_id, SchoolStreamClass.class_code).where(SchoolStreamClass.class_id.in_(c_ids)))).all()}
+        c_map   = {r.class_id: r.class_code   for r in (await db.execute(select(SchoolStreamClass.class_id, SchoolStreamClass.class_code).where(SchoolStreamClass.class_id.in_(c_ids)))).all()}
     if sec_ids:
         sec_map = {r.section_id: r.section_name for r in (await db.execute(select(SchoolStreamClassSection.section_id, SchoolStreamClassSection.section_name).where(SchoolStreamClassSection.section_id.in_(sec_ids)))).all()}
     if s_ids:
-        s_map = {r.student_id: f"{r.first_name} {r.last_name}".strip() for r in (await db.execute(select(Student.student_id, Student.first_name, Student.last_name).where(Student.student_id.in_(s_ids)))).all()}
+        s_map   = {r.student_id: f"{r.first_name} {r.last_name}".strip() for r in (await db.execute(select(Student.student_id, Student.first_name, Student.last_name).where(Student.student_id.in_(s_ids)))).all()}
     if g_ids:
-        g_map = {r.school_group_id: r.group_name for r in (await db.execute(select(SchoolGroup.school_group_id, SchoolGroup.group_name).where(SchoolGroup.school_group_id.in_(g_ids)))).all()}
+        g_map   = {r.school_group_id: r.group_name for r in (await db.execute(select(SchoolGroup.school_group_id, SchoolGroup.group_name).where(SchoolGroup.school_group_id.in_(g_ids)))).all()}
 
-    data = {
-        "total": total, "page": page, "limit": limit,
-        "data": [_ts_to_dict(t, v_map.get(t.vehicle_id), c_map.get(t.class_id), sec_map.get(t.section_id), s_map.get(t.student_id), g_map.get(t.group_id)) for t in rows],
-    }
+    data = {"total": total, "page": page, "limit": limit,
+            "data": [_ts_to_dict(t, v_map.get(t.vehicle_id), c_map.get(t.class_id), sec_map.get(t.section_id), s_map.get(t.student_id), g_map.get(t.group_id)) for t in rows]}
     if total > 0:
         await cache.set(key, data, expire=CACHE_TTL)
     return Result(code=200, message="Transportation students fetched successfully.", extra=data).http_response()
@@ -481,16 +614,16 @@ async def get_transportation_student(ts_id: int, db: AsyncSession = Depends(get_
 
     vehicle_no = class_code = section_name = student_name = group_name = None
     if obj.vehicle_id:
-        vehicle_no = (await db.execute(select(VehicleDetails.vehicle_no).where(VehicleDetails.id == obj.vehicle_id))).scalar_one_or_none()
+        vehicle_no   = (await db.execute(select(VehicleDetails.vehicle_no).where(VehicleDetails.id == obj.vehicle_id))).scalar_one_or_none()
     if obj.class_id:
-        class_code = (await db.execute(select(SchoolStreamClass.class_code).where(SchoolStreamClass.class_id == obj.class_id))).scalar_one_or_none()
+        class_code   = (await db.execute(select(SchoolStreamClass.class_code).where(SchoolStreamClass.class_id == obj.class_id))).scalar_one_or_none()
     if obj.section_id:
         section_name = (await db.execute(select(SchoolStreamClassSection.section_name).where(SchoolStreamClassSection.section_id == obj.section_id))).scalar_one_or_none()
     if obj.student_id:
         row = (await db.execute(select(Student.first_name, Student.last_name).where(Student.student_id == obj.student_id))).one_or_none()
         student_name = f"{row.first_name} {row.last_name}".strip() if row else None
     if obj.group_id:
-        group_name = (await db.execute(select(SchoolGroup.group_name).where(SchoolGroup.school_group_id == obj.group_id))).scalar_one_or_none()
+        group_name   = (await db.execute(select(SchoolGroup.group_name).where(SchoolGroup.school_group_id == obj.group_id))).scalar_one_or_none()
 
     data = _ts_to_dict(obj, vehicle_no, class_code, section_name, student_name, group_name)
     await cache.set(key, data, expire=CACHE_TTL)
@@ -508,20 +641,21 @@ async def update_transportation_student(ts_id: int, payload: TransportationStude
 
     vehicle_no = class_code = section_name = student_name = group_name = None
     if obj.vehicle_id:
-        vehicle_no = (await db.execute(select(VehicleDetails.vehicle_no).where(VehicleDetails.id == obj.vehicle_id))).scalar_one_or_none()
+        vehicle_no   = (await db.execute(select(VehicleDetails.vehicle_no).where(VehicleDetails.id == obj.vehicle_id))).scalar_one_or_none()
     if obj.class_id:
-        class_code = (await db.execute(select(SchoolStreamClass.class_code).where(SchoolStreamClass.class_id == obj.class_id))).scalar_one_or_none()
+        class_code   = (await db.execute(select(SchoolStreamClass.class_code).where(SchoolStreamClass.class_id == obj.class_id))).scalar_one_or_none()
     if obj.section_id:
         section_name = (await db.execute(select(SchoolStreamClassSection.section_name).where(SchoolStreamClassSection.section_id == obj.section_id))).scalar_one_or_none()
     if obj.student_id:
         row = (await db.execute(select(Student.first_name, Student.last_name).where(Student.student_id == obj.student_id))).one_or_none()
         student_name = f"{row.first_name} {row.last_name}".strip() if row else None
     if obj.group_id:
-        group_name = (await db.execute(select(SchoolGroup.group_name).where(SchoolGroup.school_group_id == obj.group_id))).scalar_one_or_none()
+        group_name   = (await db.execute(select(SchoolGroup.group_name).where(SchoolGroup.school_group_id == obj.group_id))).scalar_one_or_none()
 
     data = _ts_to_dict(obj, vehicle_no, class_code, section_name, student_name, group_name)
     await cache.set(_ts_key(ts_id), data, expire=CACHE_TTL)
     await cache.delete_pattern("transportation_student:list:*")
+    await cache.delete_pattern("dropdown:transportation_student:*")
     return Result(code=200, message="Transportation student updated successfully.", extra=data).http_response()
 
 
@@ -533,6 +667,7 @@ async def delete_transportation_student(ts_id: int, db: AsyncSession = Depends(g
     await db.delete(obj); await db.commit()
     await cache.delete(_ts_key(ts_id))
     await cache.delete_pattern("transportation_student:list:*")
+    await cache.delete_pattern("dropdown:transportation_student:*")
     return Result(code=200, message="Transportation student deleted successfully.", extra={"id": ts_id}).http_response()
 
 
@@ -558,6 +693,35 @@ def _ve_to_dict(e: VehicleExpenses, vehicle_no: str | None) -> dict:
 _VE_404 = {"content": {"application/json": {"example": {"code": 404, "message": "Vehicle expense not found.", "result": {}}}}}
 
 
+@transport_router.get("/vehicle_expense/all", summary="Dropdown: Vehicle Expenses")
+async def dropdown_vehicle_expenses(
+    vehicle_id: int | None = Query(None, description="Filter by vehicle ID"),
+    session_yr: str | None = Query(None, description="Filter by session year e.g. 2024-25"),
+    db: AsyncSession = Depends(get_db),
+):
+    key = f"dropdown:vehicle_expenses:{vehicle_id}:{session_yr}"
+    cached = await cache.get(key)
+    if cached:
+        return Result(code=200, message="Dropdown fetched (cache).", extra=cached).http_response()
+
+    stmt = select(
+        VehicleExpenses.id, VehicleExpenses.vehicle_id, VehicleExpenses.session_yr,
+        VehicleExpenses.description, VehicleExpenses.amount, VehicleDetails.vehicle_no,
+    ).outerjoin(VehicleDetails, VehicleExpenses.vehicle_id == VehicleDetails.id)
+    if vehicle_id: stmt = stmt.where(VehicleExpenses.vehicle_id == vehicle_id)
+    if session_yr: stmt = stmt.where(VehicleExpenses.session_yr == session_yr)
+    rows = (await db.execute(stmt.order_by(VehicleExpenses.id.desc()))).all()
+    data = [
+        {"id": r.id, "vehicle_id": r.vehicle_id, "vehicle_no": r.vehicle_no,
+         "session_yr": r.session_yr, "description": r.description,
+         "amount": str(r.amount) if r.amount is not None else None}
+        for r in rows
+    ]
+    if data:
+        await cache.set(key, data, expire=CACHE_TTL)
+    return Result(code=200, message="Dropdown fetched.", extra=data).http_response()
+
+
 @transport_router.post("/vehicle_expense/create", summary="Create a vehicle expense (with optional image)",
     responses={201: {"content": {"application/json": {"example": {"code": 201, "message": "Vehicle expense created successfully."}}}}})
 async def create_vehicle_expense(
@@ -571,6 +735,7 @@ async def create_vehicle_expense(
     data = _ve_to_dict(obj, vehicle_no)
     await cache.set(_ve_key(obj.id), data, expire=CACHE_TTL)
     await cache.delete_pattern("vehicle_expenses:list:*")
+    await cache.delete_pattern("dropdown:vehicle_expenses:*")
     return Result(code=201, message="Vehicle expense created successfully.", extra=data).http_response()
 
 
@@ -589,8 +754,8 @@ async def list_vehicle_expenses(
 
     offset = (page - 1) * limit
     stmt   = select(VehicleExpenses)
-    if vehicle_id:  stmt = stmt.where(VehicleExpenses.vehicle_id == vehicle_id)
-    if session_yr:  stmt = stmt.where(VehicleExpenses.session_yr == session_yr)
+    if vehicle_id: stmt = stmt.where(VehicleExpenses.vehicle_id == vehicle_id)
+    if session_yr: stmt = stmt.where(VehicleExpenses.session_yr == session_yr)
 
     total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
     rows  = (await db.execute(stmt.order_by(VehicleExpenses.id.desc()).offset(offset).limit(limit))).scalars().all()
@@ -600,7 +765,8 @@ async def list_vehicle_expenses(
     if v_ids:
         v_map = {r.id: r.vehicle_no for r in (await db.execute(select(VehicleDetails.id, VehicleDetails.vehicle_no).where(VehicleDetails.id.in_(v_ids)))).all()}
 
-    data = {"total": total, "page": page, "limit": limit, "data": [_ve_to_dict(e, v_map.get(e.vehicle_id)) for e in rows]}
+    data = {"total": total, "page": page, "limit": limit,
+            "data": [_ve_to_dict(e, v_map.get(e.vehicle_id)) for e in rows]}
     if total > 0:
         await cache.set(key, data, expire=CACHE_TTL)
     return Result(code=200, message="Vehicle expenses fetched successfully.", extra=data).http_response()
@@ -648,6 +814,7 @@ async def update_vehicle_expense(
     data = _ve_to_dict(obj, vehicle_no)
     await cache.set(_ve_key(expense_id), data, expire=CACHE_TTL)
     await cache.delete_pattern("vehicle_expenses:list:*")
+    await cache.delete_pattern("dropdown:vehicle_expenses:*")
     return Result(code=200, message="Vehicle expense updated successfully.", extra=data).http_response()
 
 
@@ -659,4 +826,5 @@ async def delete_vehicle_expense(expense_id: int, db: AsyncSession = Depends(get
     await db.delete(obj); await db.commit()
     await cache.delete(_ve_key(expense_id))
     await cache.delete_pattern("vehicle_expenses:list:*")
+    await cache.delete_pattern("dropdown:vehicle_expenses:*")
     return Result(code=200, message="Vehicle expense deleted successfully.", extra={"id": expense_id}).http_response()

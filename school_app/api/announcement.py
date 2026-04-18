@@ -1,5 +1,5 @@
 # api/announcement.py
-from fastapi import APIRouter, Depends, Query, UploadFile, File
+from fastapi import APIRouter, Depends, Query, UploadFile, File, Form
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -29,23 +29,24 @@ def _item_key(announcement_id: int) -> str:
     return f"announcement:{announcement_id}"
 
 
-def _list_key(page: int, limit: int, search: str | None, class_id: int | None, section_id: int | None) -> str:
-    return f"announcement:list:{page}:{limit}:{search}:{class_id}:{section_id}"
+def _list_key(page, limit, search, class_id, section_id, school_stream_id) -> str:
+    return f"announcement:list:{page}:{limit}:{search}:{class_id}:{section_id}:{school_stream_id}"
 
 
 def _row_to_dict(a: Announcement, class_code: str | None, section_name: str | None) -> dict:
     return {
-        "id":           a.id,
-        "class_id":     a.class_id,
-        "class_code":   class_code,
-        "section_id":   a.section_id,
-        "section_name": section_name,
-        "title":        a.title,
-        "description":  a.description,
-        "has_file":     a.file is not None,
-        "url":          a.url,
-        "created_at":   a.created_at.isoformat(),
-        "updated_at":   a.updated_at.isoformat(),
+        "id":               a.id,
+        "class_id":         a.class_id,
+        "class_code":       class_code,
+        "section_id":       a.section_id,
+        "section_name":     section_name,
+        "school_stream_id": a.school_stream_id,
+        "title":            a.title,
+        "description":      a.description,
+        "has_file":         a.file is not None,
+        "url":              a.url,
+        "created_at":       a.created_at.isoformat(),
+        "updated_at":       a.updated_at.isoformat(),
     }
 
 
@@ -69,11 +70,19 @@ async def _fetch_labels(db: AsyncSession, class_id: int | None, section_id: int 
 _EXAMPLE = {
     "id": 1, "class_id": 1, "class_code": "10",
     "section_id": 1, "section_name": "Rose",
+    "school_stream_id": 1,
     "title": "Parent-Teacher Meeting",
     "description": "PTM scheduled for all students of Class 10.",
     "has_file": False, "url": None,
     "created_at": "2024-01-01T10:00:00",
     "updated_at": "2024-01-01T10:00:00",
+}
+_LIST_EXAMPLE = {
+    "code": 200, "message": "Announcements fetched successfully.",
+    "result": {
+        "total": 1, "page": 1, "limit": 10,
+        "data": [_EXAMPLE],
+    }
 }
 _404 = {"content": {"application/json": {"example": {"code": 404, "message": "Announcement not found.", "result": {}}}}}
 
@@ -85,18 +94,42 @@ _404 = {"content": {"application/json": {"example": {"code": 404, "message": "An
     summary="Create an announcement (with optional file upload)",
     responses={
         201: {"content": {"application/json": {"example": {"code": 201, "message": "Announcement created successfully.", "result": _EXAMPLE}}}},
+        409: {"content": {"application/json": {"example": {"code": 409, "message": "Announcement with this title already exists for this class and section.", "result": {}}}}},
     },
 )
 async def create_announcement(
-    payload: AnnouncementCreate,
-    file:    UploadFile | None = File(None),
+    class_id:         int | None = Form(None),
+    section_id:       int | None = Form(None),
+    school_stream_id: int | None = Form(None),
+    title:            str | None = Form(None, max_length=100),
+    description:      str | None = Form(None, max_length=1000),
+    url:              str | None = Form(None, max_length=1000),
+    file:             UploadFile | None = File(None),
     db: AsyncSession = Depends(get_db),
 ):
-    file_bytes = await file.read() if file else None
+    if title:
+        conditions = [Announcement.title == title]
+        if class_id is not None:
+            conditions.append(Announcement.class_id == class_id)
+        if section_id is not None:
+            conditions.append(Announcement.section_id == section_id)
+        if school_stream_id is not None:
+            conditions.append(Announcement.school_stream_id == school_stream_id)
+
+        exists = (await db.execute(
+            select(Announcement.id).where(*conditions)
+        )).scalar_one_or_none()
+        if exists:
+            return Result(code=409, message="Announcement with this title already exists for this class and section.", extra={}).http_response()
 
     obj = Announcement(
-        **payload.model_dump(),
-        file=file_bytes,
+        class_id=class_id,
+        section_id=section_id,
+        school_stream_id=school_stream_id,
+        title=title,
+        description=description,
+        url=url,
+        file=await file.read() if file else None,
     )
     db.add(obj)
     await db.commit()
@@ -115,22 +148,20 @@ async def create_announcement(
     "/list",
     summary="List all announcements (paginated)",
     responses={
-        200: {"content": {"application/json": {"example": {
-            "code": 200, "message": "Announcements fetched successfully.",
-            "result": {"total": 2, "page": 1, "limit": 10, "data": [_EXAMPLE]},
-        }}}},
+        200: {"content": {"application/json": {"example": _LIST_EXAMPLE}}},
     },
 )
 async def list_announcements(
-    page:       int        = Query(1,    ge=1),
-    limit:      int        = Query(10,   ge=1, le=100),
-    search:     str | None = Query(None, description="Search by title"),
-    class_id:   int | None = Query(None, description="Filter by class ID"),
-    section_id: int | None = Query(None, description="Filter by section ID"),
+    page:             int        = Query(1,    ge=1),
+    limit:            int        = Query(10,   ge=1, le=100),
+    search:           str | None = Query(None, description="Search by title"),
+    class_id:         int | None = Query(None, description="Filter by class ID"),
+    section_id:       int | None = Query(None, description="Filter by section ID"),
+    school_stream_id: int | None = Query(None, description="Filter by school stream ID"),
     db: AsyncSession = Depends(get_db),
 ):
     search = clean_search(search)
-    key    = _list_key(page, limit, search, class_id, section_id)
+    key    = _list_key(page, limit, search, class_id, section_id, school_stream_id)
 
     cached = await cache.get(key)
     if cached:
@@ -143,6 +174,8 @@ async def list_announcements(
         stmt = stmt.where(Announcement.class_id == class_id)
     if section_id is not None:
         stmt = stmt.where(Announcement.section_id == section_id)
+    if school_stream_id is not None:
+        stmt = stmt.where(Announcement.school_stream_id == school_stream_id)
     if search:
         stmt = stmt.where(Announcement.title.like(f"%{search}%"))
 
@@ -238,19 +271,27 @@ async def get_announcement_file(announcement_id: int, db: AsyncSession = Depends
     },
 )
 async def update_announcement(
-    announcement_id: int,
-    payload: AnnouncementUpdate,
-    file:    UploadFile | None = File(None),
+    announcement_id:  int,
+    class_id:         int | None = Form(None),
+    section_id:       int | None = Form(None),
+    school_stream_id: int | None = Form(None),
+    title:            str | None = Form(None, max_length=100),
+    description:      str | None = Form(None, max_length=1000),
+    url:              str | None = Form(None, max_length=1000),
+    file:             UploadFile | None = File(None),
     db: AsyncSession = Depends(get_db),
 ):
     obj = (await db.execute(select(Announcement).where(Announcement.id == announcement_id))).scalar_one_or_none()
     if obj is None:
         return Result(code=404, message="Announcement not found.", extra={}).http_response()
 
-    for field, value in payload.model_dump(exclude_unset=True).items():
-        setattr(obj, field, value)
-    if file is not None:
-        obj.file = await file.read()
+    if class_id         is not None: obj.class_id         = class_id
+    if section_id       is not None: obj.section_id       = section_id
+    if school_stream_id is not None: obj.school_stream_id = school_stream_id
+    if title            is not None: obj.title            = title
+    if description      is not None: obj.description      = description
+    if url              is not None: obj.url              = url
+    if file             is not None: obj.file             = await file.read()
 
     await db.commit()
     await db.refresh(obj)

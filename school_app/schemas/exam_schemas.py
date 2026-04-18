@@ -1,7 +1,7 @@
 # schemas/exam_schemas.py
 from pydantic import BaseModel, Field
 from typing import Optional, List
-from datetime import datetime, date, time
+from datetime import datetime, date
 
 
 # ══════════════════════════════════════════════
@@ -26,7 +26,7 @@ class GradeCreate(BaseModel):
 
 class ExamCreate(BaseModel):
     exam_name:        str
-    school_stream_id: int
+    class_id:         Optional[int] = None
     session_yr:       str
     exam_description: str
     is_active:        Optional[bool] = True
@@ -34,7 +34,7 @@ class ExamCreate(BaseModel):
     model_config = {
         "json_schema_extra": {
             "example": {
-                "exam_name": "Mid Term 2024", "school_stream_id": 1,
+                "exam_name": "Mid Term 2024", "class_id": 1,
                 "session_yr": "2024-25", "exam_description": "Mid term exam", "is_active": True
             }
         }
@@ -43,7 +43,7 @@ class ExamCreate(BaseModel):
 
 class ExamUpdate(BaseModel):
     exam_name:        Optional[str]  = None
-    school_stream_id: Optional[int]  = None
+    class_id:         Optional[int]  = None
     session_yr:       Optional[str]  = None
     exam_description: Optional[str]  = None
     is_active:        Optional[bool] = None
@@ -60,48 +60,38 @@ class ExamUpdate(BaseModel):
 # ══════════════════════════════════════════════
 
 class ExamTimetableCreate(BaseModel):
-    exam_id:          int
-    school_stream_id: int
-    school_group_id:  int
-    subject_id:       int
-    total_marks:      float
-    pass_mark:        float
-    exam_start_date:  datetime
-    exam_end_date:    Optional[datetime] = None
-    start_time:       time
-    start_ampm:       str
-    end_time:         time
-    end_ampm:         str
-    is_active:        Optional[bool] = True
+    exam_id:         int
+    class_id:        Optional[int]   = None
+    school_group_id: Optional[int]   = None
+    subject_id:      int
+    total_marks:     float
+    pass_mark:       float
+    exam_start_date: Optional[datetime] = None
+    exam_end_date:   Optional[datetime] = None
+    is_active:       Optional[bool] = True
 
     model_config = {
         "json_schema_extra": {
             "example": {
-                "exam_id": 1, "school_stream_id": 1, "school_group_id": 1,
+                "exam_id": 1, "class_id": 1, "school_group_id": 1,
                 "subject_id": 1, "total_marks": 100.0, "pass_mark": 35.0,
                 "exam_start_date": "2024-11-01T09:00:00",
-                "exam_end_date": "2024-11-01T12:00:00",
-                "start_time": "09:00:00", "start_ampm": "AM",
-                "end_time": "12:00:00", "end_ampm": "PM", "is_active": True
+                "exam_end_date": "2024-11-01T12:00:00", "is_active": True
             }
         }
     }
 
 
 class ExamTimetableUpdate(BaseModel):
-    exam_id:          Optional[int]      = None
-    school_stream_id: Optional[int]      = None
-    school_group_id:  Optional[int]      = None
-    subject_id:       Optional[int]      = None
-    total_marks:      Optional[float]    = None
-    pass_mark:        Optional[float]    = None
-    exam_start_date:  Optional[datetime] = None
-    exam_end_date:    Optional[datetime] = None
-    start_time:       Optional[time]     = None
-    start_ampm:       Optional[str]      = None
-    end_time:         Optional[time]     = None
-    end_ampm:         Optional[str]      = None
-    is_active:        Optional[bool]     = None
+    exam_id:         Optional[int]      = None
+    class_id:        Optional[int]      = None
+    school_group_id: Optional[int]      = None
+    subject_id:      Optional[int]      = None
+    total_marks:     Optional[float]    = None
+    pass_mark:       Optional[float]    = None
+    exam_start_date: Optional[datetime] = None
+    exam_end_date:   Optional[datetime] = None
+    is_active:       Optional[bool]     = None
 
     model_config = {
         "json_schema_extra": {

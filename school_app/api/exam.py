@@ -7,7 +7,6 @@ from typing import Optional, List
 from database.session import get_db
 from database.redis_cache import cache
 from models.exam_models import Grade, Exam, ExamTimetable, StudentMarks, OnlineExam, OnlineClass
-from models.school_stream_models import SchoolStream
 from schemas.exam_schemas import (
     GradeCreate,
     ExamCreate, ExamUpdate,
@@ -200,7 +199,7 @@ async def delete_grade(grade_id: int, db: AsyncSession = Depends(get_db)):
     "/exam/create",
     summary="Create an exam",
     responses={
-        201: {"content": {"application/json": {"example": {"code": 201, "message": "Exam created successfully.", "result": {"exam_id": 1, "exam_name": "Mid Term 2024", "school_stream_id": 1, "session_yr": "2024-25", "is_active": True}}}}},
+        201: {"content": {"application/json": {"example": {"code": 201, "message": "Exam created successfully.", "result": {"exam_id": 1, "exam_name": "Mid Term 2024", "class_id": 1, "session_yr": "2024-25", "is_active": True}}}}},
         409: {"content": {"application/json": {"example": {"code": 409, "message": "Exam with this name already exists.", "result": {}}}}},
     },
 )
@@ -218,7 +217,7 @@ async def create_exam(payload: ExamCreate, db: AsyncSession = Depends(get_db)):
     return Result(code=201, message="Exam created successfully.", extra={
         "exam_id":          exam.exam_id,
         "exam_name":        exam.exam_name,
-        "school_stream_id": exam.school_stream_id,
+        "class_id":         exam.class_id,
         "session_yr":       exam.session_yr,
         "exam_description": exam.exam_description,
         "is_active":        exam.is_active,
@@ -233,20 +232,20 @@ async def create_exam(payload: ExamCreate, db: AsyncSession = Depends(get_db)):
     },
 )
 async def list_exams(
-    school_id: Optional[int] = Query(None),
+    class_id:  Optional[int] = Query(None),
     search:    Optional[str] = Query(None, description="Search by exam_name, session_yr, or 'active'/'inactive'"),
     page:      int           = Query(1,  ge=1),
     limit:     int           = Query(10, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    key = f"exam:list:{school_id}:{search}:{page}:{limit}"
+    key = f"exam:list:{class_id}:{search}:{page}:{limit}"
     cached = await cache.get(key)
     if cached:
         return Result(code=200, message="Exams fetched successfully (cache).", extra=cached).http_response()
 
     stmt = select(Exam)
-    if school_id is not None:
-        stmt = stmt.where(Exam.school_stream_id == school_id)
+    if class_id is not None:
+        stmt = stmt.where(Exam.class_id == class_id)
     if search is not None and search.lower() in {"active", "inactive"}:
         stmt = stmt.where(Exam.is_active == (search.lower() == "active"))
     elif search:
@@ -264,7 +263,7 @@ async def list_exams(
     data = {
         "total": total, "page": page, "limit": limit,
         "data": [
-            {"exam_id": e.exam_id, "exam_name": e.exam_name, "school_stream_id": e.school_stream_id,
+            {"exam_id": e.exam_id, "exam_name": e.exam_name, "class_id": e.class_id,
              "session_yr": e.session_yr, "exam_description": e.exam_description, "is_active": e.is_active}
             for e in rows
         ],
@@ -293,7 +292,7 @@ async def get_exam(exam_id: int, db: AsyncSession = Depends(get_db)):
     if not exam:
         return Result(code=404, message="Exam not found.", extra={}).http_response()
 
-    data = {"exam_id": exam.exam_id, "exam_name": exam.exam_name, "school_stream_id": exam.school_stream_id,
+    data = {"exam_id": exam.exam_id, "exam_name": exam.exam_name, "class_id": exam.class_id,
             "session_yr": exam.session_yr, "exam_description": exam.exam_description, "is_active": exam.is_active}
     await cache.set(key, data, expire=CACHE_TTL)
     return Result(code=200, message="Exam fetched successfully.", extra=data).http_response()
@@ -317,19 +316,12 @@ async def update_exam(exam_id: int, payload: ExamUpdate, db: AsyncSession = Depe
     if not update_data:
         return Result(code=400, message="No fields provided for update.", extra={}).http_response()
 
-    if "school_stream_id" in update_data:
-        stream = (await db.execute(
-            select(SchoolStream.school_stream_id).where(SchoolStream.school_stream_id == update_data["school_stream_id"])
-        )).scalar_one_or_none()
-        if not stream:
-            return Result(code=404, message="school_stream_id not found.", extra={}).http_response()
-
     for field, value in update_data.items():
         setattr(exam, field, value)
     await db.commit()
     await db.refresh(exam)
 
-    data = {"exam_id": exam.exam_id, "exam_name": exam.exam_name, "school_stream_id": exam.school_stream_id,
+    data = {"exam_id": exam.exam_id, "exam_name": exam.exam_name, "class_id": exam.class_id,
             "session_yr": exam.session_yr, "exam_description": exam.exam_description, "is_active": exam.is_active}
     await cache.set(f"exam:{exam_id}", data, expire=CACHE_TTL)
     await cache.delete_pattern("exam:list:*")
@@ -393,21 +385,21 @@ async def create_exam_timetable(payload: ExamTimetableCreate, db: AsyncSession =
     },
 )
 async def list_exam_timetables(
-    school_id: Optional[int] = Query(None),
-    exam_id:   Optional[int] = Query(None),
-    search:    Optional[str] = Query(None, description="Search by exam_name, or 'active'/'inactive'"),
-    page:      int           = Query(1,  ge=1),
-    limit:     int           = Query(10, ge=1, le=100),
+    class_id:   Optional[int] = Query(None),
+    exam_id:    Optional[int] = Query(None),
+    search:     Optional[str] = Query(None, description="Search by exam_name, or 'active'/'inactive'"),
+    page:       int           = Query(1,  ge=1),
+    limit:      int           = Query(10, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    key = f"timetable:list:{school_id}:{exam_id}:{search}:{page}:{limit}"
+    key = f"timetable:list:{class_id}:{exam_id}:{search}:{page}:{limit}"
     cached = await cache.get(key)
     if cached:
         return Result(code=200, message="Timetables fetched successfully (cache).", extra=cached).http_response()
 
     stmt = select(ExamTimetable).join(Exam, ExamTimetable.exam_id == Exam.exam_id)
-    if school_id:
-        stmt = stmt.where(ExamTimetable.school_stream_id == school_id)
+    if class_id:
+        stmt = stmt.where(ExamTimetable.class_id == class_id)
     if exam_id:
         stmt = stmt.where(ExamTimetable.exam_id == exam_id)
     if search is not None and search.lower() in {"active", "inactive"}:
@@ -425,20 +417,16 @@ async def list_exam_timetables(
         "total": total, "page": page, "limit": limit,
         "data": [
             {
-                "timetable_id":     t.timetable_id,
-                "exam_id":          t.exam_id,
-                "school_stream_id": t.school_stream_id,
-                "school_group_id":  t.school_group_id,
-                "subject_id":       t.subject_id,
-                "total_marks":      float(t.total_marks) if t.total_marks else None,
-                "pass_mark":        float(t.pass_mark) if t.pass_mark else None,
-                "exam_start_date":  str(t.exam_start_date) if t.exam_start_date else None,
-                "exam_end_date":    str(t.exam_end_date) if t.exam_end_date else None,
-                "start_time":       str(t.start_time),
-                "start_ampm":       t.start_ampm,
-                "end_time":         str(t.end_time),
-                "end_ampm":         t.end_ampm,
-                "is_active":        t.is_active,
+                "timetable_id":    t.timetable_id,
+                "exam_id":         t.exam_id,
+                "class_id":        t.class_id,
+                "school_group_id": t.school_group_id,
+                "subject_id":      t.subject_id,
+                "total_marks":     float(t.total_marks) if t.total_marks else None,
+                "pass_mark":       float(t.pass_mark) if t.pass_mark else None,
+                "exam_start_date": str(t.exam_start_date) if t.exam_start_date else None,
+                "exam_end_date":   str(t.exam_end_date) if t.exam_end_date else None,
+                "is_active":       t.is_active,
             }
             for t in rows
         ],

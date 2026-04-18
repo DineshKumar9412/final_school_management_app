@@ -5,31 +5,34 @@ from datetime import datetime
 
 
 class AnnouncementCreate(BaseModel):
-    class_id:    Optional[int] = None
-    section_id:  Optional[int] = None
-    title:       Optional[str] = Field(None, max_length=100)
-    description: Optional[str] = Field(None, max_length=1000)
-    url:         Optional[str] = Field(None, max_length=1000)
+    class_id:         Optional[int] = None
+    section_id:       Optional[int] = None
+    school_stream_id: Optional[int] = None
+    title:            Optional[str] = Field(None, max_length=100)
+    description:      Optional[str] = Field(None, max_length=1000)
+    url:              Optional[str] = Field(None, max_length=1000)
 
     model_config = {
         "json_schema_extra": {
             "example": {
-                "class_id":    1,
-                "section_id":  1,
-                "title":       "Parent-Teacher Meeting",
-                "description": "PTM scheduled for all students of Class 10.",
-                "url":         None,
+                "class_id":         1,
+                "section_id":       1,
+                "school_stream_id": 1,
+                "title":            "Parent-Teacher Meeting",
+                "description":      "PTM scheduled for all students of Class 10.",
+                "url":              None,
             }
         }
     }
 
 
 class AnnouncementUpdate(BaseModel):
-    class_id:    Optional[int] = None
-    section_id:  Optional[int] = None
-    title:       Optional[str] = Field(None, max_length=100)
-    description: Optional[str] = Field(None, max_length=1000)
-    url:         Optional[str] = Field(None, max_length=1000)
+    class_id:         Optional[int] = None
+    section_id:       Optional[int] = None
+    school_stream_id: Optional[int] = None
+    title:            Optional[str] = Field(None, max_length=100)
+    description:      Optional[str] = Field(None, max_length=1000)
+    url:              Optional[str] = Field(None, max_length=1000)
 
     model_config = {
         "json_schema_extra": {

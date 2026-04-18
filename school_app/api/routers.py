@@ -21,9 +21,13 @@ from api.student_diary import student_diary_router
 from api.transport import transport_router
 from api.emp_leave_request import emp_leave_router
 from api.custom_alarm import custom_alarm_router
+from api.dashboard import dashboard_router
+from api.android_student import android_student_router
+from api.android_teacher import android_teacher_router
 
 ROUTERS = [
     (auth_router,                  "/api/auth"),
+    (dashboard_router,              "/api/dashboard"),
     (web_login_router,             "/api/auth"),
     (profile_router,               "/api/auth"),
     (android_router,               "/api/auth"),
@@ -45,4 +49,6 @@ ROUTERS = [
     (transport_router,              "/api/transport"),
     (emp_leave_router,              "/api/emp_leave"),
     (custom_alarm_router,           "/api/custom_alarm"),
+    (android_student_router,        "/api/android/student"),
+    (android_teacher_router,        "/api/android/teacher"),
 ]

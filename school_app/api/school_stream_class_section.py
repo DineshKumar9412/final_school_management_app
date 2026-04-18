@@ -25,8 +25,8 @@ def clean_search(search: str | None) -> str | None:
 def _item_key(section_id: int) -> str:
     return f"school_stream_section:{section_id}"
 
-def _list_key(page: int, limit: int, search: str | None) -> str:
-    return f"school_stream_section:list:{page}:{limit}:{search}"
+def _list_key(page: int, limit: int, search: str | None, class_id: int | None = None) -> str:
+    return f"school_stream_section:list:{page}:{limit}:{search}:{class_id}"
 
 def _row_to_dict(r) -> dict:
     return {
@@ -112,13 +112,14 @@ async def create_section(payload: SchoolStreamClassSectionCreate, db: AsyncSessi
     },
 )
 async def list_sections(
-    page:   int        = Query(1,    ge=1),
-    limit:  int        = Query(10,   ge=1, le=100),
-    search: str | None = Query(None, description="Search by section_name, section_code, class_code, or type 'active'/'inactive'"),
+    page:     int        = Query(1,    ge=1),
+    limit:    int        = Query(10,   ge=1, le=100),
+    search:   str | None = Query(None, description="Search by section_name, section_code, class_code, or type 'active'/'inactive'"),
+    class_id: int | None = Query(None, description="Filter by class ID"),
     db: AsyncSession = Depends(get_db),
 ):
     search = clean_search(search)
-    key = _list_key(page, limit, search)
+    key = _list_key(page, limit, search, class_id)
     cached = await cache.get(key)
     if cached:
         return Result(code=200, message="Sections fetched successfully (cache).", extra=cached).http_response()
@@ -138,6 +139,9 @@ async def list_sections(
         ]
     else:
         filters = [SchoolStreamClassSection.status == "active"]
+
+    if class_id is not None:
+        filters.append(SchoolStreamClassSection.class_id == class_id)
 
     total = (await db.execute(_count_stmt().where(*filters))).scalar_one()
     rows = await db.execute(_joined_stmt().where(*filters).order_by(SchoolStreamClassSection.section_id).offset(offset).limit(limit))
@@ -236,6 +240,7 @@ async def dropdown_sections(
     stmt = (
         select(
             SchoolStreamClassSection.section_id,
+            SchoolStreamClassSection.section_name,
             SchoolStreamClassSection.section_code,
             SchoolStream.stream_name,
         )
@@ -255,6 +260,7 @@ async def dropdown_sections(
     data = [
         {
             "section_id":   r.section_id,
+            "section_name": r.section_name,
             "section_code": r.section_code,
             "stream_name":  r.stream_name,
         }

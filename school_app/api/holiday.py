@@ -60,9 +60,19 @@ _404 = {"content": {"application/json": {"example": {"code": 404, "message": "Ho
     summary="Create a holiday",
     responses={
         201: {"content": {"application/json": {"example": {"code": 201, "message": "Holiday created successfully.", "result": _EXAMPLE}}}},
+        409: {"content": {"application/json": {"example": {"code": 409, "message": "Holiday 'Independence Day' on 2024-08-15 already exists.", "result": {}}}}},
     },
 )
 async def create_holiday(payload: HolidayCreate, db: AsyncSession = Depends(get_db)):
+    exists = (await db.execute(
+        select(Holiday.id).where(
+            Holiday.holiday_date == payload.holiday_date,
+            Holiday.title        == payload.title,
+        )
+    )).scalar_one_or_none()
+    if exists:
+        return Result(code=409, message=f"Holiday '{payload.title}' on {payload.holiday_date} already exists.", extra={}).http_response()
+
     obj = Holiday(**payload.model_dump())
     db.add(obj)
     await db.commit()

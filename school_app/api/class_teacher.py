@@ -2,17 +2,17 @@
 """
 Manage Class Section & Teachers
 --------------------------------
-Uses existing table: school_class_emp_mapping
-  - role_id = 2  → Class Teacher
-  - role_id = 1  → Subject Teacher (or any other role)
+Uses table: school_class_emp_mapping
+  - role_id = 2  → Class Teacher   (POST /class_teacher/create)
+  - role_id = 1  → Subject Teacher (POST /subject_teacher/create)
 
 The list API groups records by class + section and returns:
-  - class_teacher  : employee with role_id = 2 mapped to that class
+  - class_teacher   : employee with role_id = 2 mapped to that class/section
   - subject_teachers: all other employees mapped to that class (with subject name)
 """
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, or_
 
 from database.session import get_db
 from database.redis_cache import cache
@@ -23,7 +23,11 @@ from models.school_stream_models import (
     SchoolStreamSubject,
     SchoolGroup,
 )
-from schemas.class_teacher_schemas import ClassSectionTeacherCreate, ClassSectionTeacherUpdate
+from schemas.class_teacher_schemas import (
+    ClassTeacherCreate,
+    SubjectTeacherCreate,
+    ClassSectionTeacherUpdate,
+)
 from security.valid_session import valid_session
 from response.result import Result
 from typing import Optional
@@ -35,7 +39,7 @@ class_teacher_router = APIRouter(
 )
 
 CACHE_TTL = 86400
-CLASS_TEACHER_ROLE_ID = 2   # role_id for "Class Teacher"
+CLASS_TEACHER_ROLE_ID = 2
 
 
 # ══════════════════════════════════════════════
@@ -50,23 +54,17 @@ CLASS_TEACHER_ROLE_ID = 2   # role_id for "Class Teacher"
             "code": 200,
             "message": "Class section teachers fetched successfully.",
             "result": {
-                "total": 1,
-                "page": 1,
-                "limit": 10,
-                "data": [
-                    {
-                        "class_id":       1,
-                        "class_code":     "5",
-                        "section_id":     3,
-                        "section_code":   "C",
-                        "group_name":     "Primary",
-                        "class_teacher":  {"map_id": 1, "emp_id": 2, "emp_name": "Vanshika"},
-                        "subject_teachers": [
-                            {"map_id": 2, "emp_id": 3, "emp_name": "Sahasra",  "subject_id": 1, "subject_name": "Telugu"},
-                            {"map_id": 3, "emp_id": 4, "emp_name": "Safa Anjum", "subject_id": 2, "subject_name": "Hindi"},
-                        ]
-                    }
-                ]
+                "total": 1, "page": 1, "limit": 10,
+                "data": [{
+                    "class_id": 1, "class_code": "5",
+                    "school_group_id": 1,
+                    "section_id": 3, "section_code": "C",
+                    "group_name": "Primary",
+                    "class_teacher": {"map_id": 1, "emp_id": 2026001, "emp_name": "Vanshika"},
+                    "subject_teachers": [
+                        {"map_id": 2, "emp_id": 2026003, "emp_name": "Suresh Babu", "subject_id": 1, "subject_name": "Telugu"},
+                    ]
+                }]
             }
         }}}}
     },
@@ -85,32 +83,34 @@ async def list_class_section_teachers(
     if cached:
         return Result(code=200, message="Class section teachers fetched successfully (cache).", extra=cached).http_response()
 
-    # ── base stmt: join mapping → employee → role → class → subject ──────────
     stmt = (
         select(
             EmployeeClassMapping.map_id,
             EmployeeClassMapping.emp_id,
+            EmployeeClassMapping.role_id,
             EmployeeClassMapping.class_id,
+            EmployeeClassMapping.section_id,
             EmployeeClassMapping.subject_id,
             Employee.first_name,
             Employee.last_name,
-            Employee.role_id,
-            Role.role_name,
             SchoolStreamClass.class_code,
             SchoolStreamClass.school_group_id,
             SchoolGroup.group_name,
+            SchoolStreamClassSection.section_code,
             SchoolStreamSubject.subject_name,
         )
-        .join(Employee,           EmployeeClassMapping.emp_id     == Employee.id)
-        .join(Role,               Employee.role_id                == Role.role_id)
-        .join(SchoolStreamClass,  EmployeeClassMapping.class_id   == SchoolStreamClass.class_id)
-        .outerjoin(SchoolGroup,   SchoolStreamClass.school_group_id == SchoolGroup.school_group_id)
-        .join(SchoolStreamSubject, EmployeeClassMapping.subject_id == SchoolStreamSubject.subject_id)
+        # FK is emp_id → employee.emp_id (not employee.id)
+        .join(Employee,                 EmployeeClassMapping.emp_id     == Employee.emp_id)
+        .join(SchoolStreamClass,        EmployeeClassMapping.class_id   == SchoolStreamClass.class_id)
+        .join(SchoolStreamClassSection, EmployeeClassMapping.section_id == SchoolStreamClassSection.section_id)
+        .outerjoin(SchoolGroup,         SchoolStreamClass.school_group_id == SchoolGroup.school_group_id)
+        .outerjoin(SchoolStreamSubject, EmployeeClassMapping.subject_id == SchoolStreamSubject.subject_id)
     )
 
-    # ── filters ───────────────────────────────────────────────────────────────
     if class_id:
         stmt = stmt.where(EmployeeClassMapping.class_id == class_id)
+    if section_id:
+        stmt = stmt.where(EmployeeClassMapping.section_id == section_id)
     if school_group_id:
         stmt = stmt.where(SchoolStreamClass.school_group_id == school_group_id)
     if search:
@@ -119,83 +119,52 @@ async def list_class_section_teachers(
             Employee.first_name.like(s),
             Employee.last_name.like(s),
             SchoolStreamSubject.subject_name.like(s),
+            SchoolStreamClass.class_code.like(s),
         ))
 
-    rows = (await db.execute(stmt.order_by(EmployeeClassMapping.class_id, EmployeeClassMapping.map_id))).all()
+    rows = (await db.execute(
+        stmt.order_by(EmployeeClassMapping.class_id, EmployeeClassMapping.section_id, EmployeeClassMapping.map_id)
+    )).all()
 
-    # ── fetch sections for each class_id (mapping table has no section_id) ───
-    class_ids = list({r.class_id for r in rows})
-    section_rows = []
-    if class_ids:
-        sec_stmt = (
-            select(
-                SchoolStreamClassSection.section_id,
-                SchoolStreamClassSection.class_id,
-                SchoolStreamClassSection.section_code,
-                SchoolStreamClassSection.section_name,
-            )
-            .where(SchoolStreamClassSection.class_id.in_(class_ids))
-        )
-        if section_id:
-            sec_stmt = sec_stmt.where(SchoolStreamClassSection.section_id == section_id)
-        section_rows = (await db.execute(sec_stmt)).all()
-
-    # build section map: class_id → list of sections
-    section_map: dict = defaultdict(list)
-    for sec in section_rows:
-        section_map[sec.class_id].append({
-            "section_id":   sec.section_id,
-            "section_code": sec.section_code,
-            "section_name": sec.section_name,
-        })
-
-    # ── group rows by class_id ────────────────────────────────────────────────
-    class_map: dict = defaultdict(lambda: {"class_teacher": None, "subject_teachers": []})
-    class_meta: dict = {}
+    # group by (class_id, section_id)
+    group_map:  dict = defaultdict(lambda: {"class_teacher": None, "subject_teachers": []})
+    group_meta: dict = {}
 
     for r in rows:
-        cid = r.class_id
-        if cid not in class_meta:
-            class_meta[cid] = {
-                "class_id":   cid,
-                "class_code": r.class_code,
-                "group_name": r.group_name,
+        key_cs = (r.class_id, r.section_id)
+        if key_cs not in group_meta:
+            group_meta[key_cs] = {
+                "class_id":        r.class_id,
+                "class_code":      r.class_code,
+                "school_group_id": r.school_group_id,
+                "section_id":      r.section_id,
+                "section_code":    r.section_code,
+                "group_name":      r.group_name,
             }
         emp_name = f"{r.first_name} {r.last_name or ''}".strip()
-        entry = {
-            "map_id":       r.map_id,
-            "emp_id":       r.emp_id,
-            "emp_name":     emp_name,
-            "subject_id":   r.subject_id,
-            "subject_name": r.subject_name,
-            "role_name":    r.role_name,
-        }
         if r.role_id == CLASS_TEACHER_ROLE_ID:
-            class_map[cid]["class_teacher"] = {
+            group_map[key_cs]["class_teacher"] = {
                 "map_id":   r.map_id,
                 "emp_id":   r.emp_id,
                 "emp_name": emp_name,
             }
         else:
-            class_map[cid]["subject_teachers"].append(entry)
-
-    # ── build result — expand each class × its sections ───────────────────────
-    result_list = []
-    for cid, meta in class_meta.items():
-        sections = section_map.get(cid, [{"section_id": None, "section_code": None, "section_name": None}])
-        for sec in sections:
-            result_list.append({
-                "class_id":        cid,
-                "class_code":      meta["class_code"],
-                "section_id":      sec["section_id"],
-                "section_code":    sec["section_code"],
-                "section_name":    sec["section_name"],
-                "group_name":      meta["group_name"],
-                "class_teacher":   class_map[cid]["class_teacher"],
-                "subject_teachers": class_map[cid]["subject_teachers"],
+            group_map[key_cs]["subject_teachers"].append({
+                "map_id":       r.map_id,
+                "emp_id":       r.emp_id,
+                "emp_name":     emp_name,
+                "subject_id":   r.subject_id,
+                "subject_name": r.subject_name,
             })
 
-    # ── pagination ────────────────────────────────────────────────────────────
+    result_list = []
+    for key_cs, meta in group_meta.items():
+        result_list.append({
+            **meta,
+            "class_teacher":    group_map[key_cs]["class_teacher"],
+            "subject_teachers": group_map[key_cs]["subject_teachers"],
+        })
+
     total  = len(result_list)
     offset = (page - 1) * limit
     paged  = result_list[offset: offset + limit]
@@ -208,45 +177,130 @@ async def list_class_section_teachers(
 
 
 # ══════════════════════════════════════════════
-# CREATE mapping
+# CREATE — Class Teacher  (role_id required)
 # ══════════════════════════════════════════════
 
 @class_teacher_router.post(
-    "/class_section_teacher/create",
-    summary="Assign employee to class + subject",
+    "/class_teacher/create",
+    summary="Assign class teacher to a class + section",
     responses={
-        201: {"content": {"application/json": {"example": {"code": 201, "message": "Mapping created successfully.", "result": {"map_id": 1, "emp_id": 1, "class_id": 1, "subject_id": 2}}}}},
+        201: {"content": {"application/json": {"example": {"code": 201, "message": "Class teacher assigned successfully.", "result": {"map_id": 1, "emp_id": 2026003, "role_id": 2, "class_id": 1, "section_id": 1}}}}},
         404: {"content": {"application/json": {"example": {"code": 404, "message": "Employee not found.", "result": {}}}}},
-        409: {"content": {"application/json": {"example": {"code": 409, "message": "Mapping already exists.", "result": {}}}}},
+        409: {"content": {"application/json": {"example": {"code": 409, "message": "Class teacher already assigned for this class and section.", "result": {}}}}},
     },
 )
-async def create_mapping(payload: ClassSectionTeacherCreate, db: AsyncSession = Depends(get_db)):
-    # verify employee
-    emp = (await db.execute(select(Employee.id).where(Employee.id == payload.emp_id))).scalar_one_or_none()
+async def create_class_teacher(payload: ClassTeacherCreate, db: AsyncSession = Depends(get_db)):
+    # verify employee by emp_id (the FK column)
+    emp = (await db.execute(
+        select(Employee.emp_id).where(Employee.emp_id == payload.emp_id)
+    )).scalar_one_or_none()
     if not emp:
         return Result(code=404, message="Employee not found.", extra={}).http_response()
 
-    # duplicate check
+    # one class teacher per class+section
     exists = (await db.execute(
         select(EmployeeClassMapping.map_id).where(
-            EmployeeClassMapping.emp_id    == payload.emp_id,
-            EmployeeClassMapping.class_id  == payload.class_id,
-            EmployeeClassMapping.subject_id == payload.subject_id,
+            EmployeeClassMapping.class_id   == payload.class_id,
+            EmployeeClassMapping.section_id == payload.section_id,
+            EmployeeClassMapping.role_id    == payload.role_id,
         )
     )).scalar_one_or_none()
     if exists:
-        return Result(code=409, message="Mapping already exists for this employee, class, and subject.", extra={}).http_response()
+        return Result(code=409, message="Class teacher already assigned for this class and section.", extra={}).http_response()
 
-    obj = EmployeeClassMapping(**payload.model_dump())
+    obj = EmployeeClassMapping(
+        emp_id=payload.emp_id,
+        role_id=payload.role_id,
+        class_id=payload.class_id,
+        section_id=payload.section_id,
+        subject_id=payload.subject_id,
+    )
     db.add(obj)
     await db.commit()
     await db.refresh(obj)
 
     await cache.delete_pattern("class_teacher:list:*")
-    return Result(code=201, message="Mapping created successfully.", extra={
+    return Result(code=201, message="Class teacher assigned successfully.", extra={
+        "map_id":     obj.map_id,
+        "emp_id":     obj.emp_id,
+        "role_id":    obj.role_id,
+        "class_id":   obj.class_id,
+        "section_id": obj.section_id,
+    }).http_response()
+
+
+# ══════════════════════════════════════════════
+# CREATE — Subject Teacher  (subject_id required, no role_id)
+# ══════════════════════════════════════════════
+
+@class_teacher_router.post(
+    "/subject_teacher/create",
+    summary="Assign subject teacher to a class + section + subject",
+    responses={
+        201: {"content": {"application/json": {"example": {"code": 201, "message": "Subject teacher assigned successfully.", "result": {"map_id": 2, "emp_id": 2026003, "class_id": 1, "section_id": 1, "subject_id": 2}}}}},
+        404: {"content": {"application/json": {"example": {"code": 404, "message": "Employee not found.", "result": {}}}}},
+        409: {"content": {"application/json": {"example": {"code": 409, "message": "This subject is already assigned to Ravi Kumar for this class and section.", "result": {"assigned_teacher": "Ravi Kumar"}}}}},
+    },
+)
+async def create_subject_teacher(payload: SubjectTeacherCreate, db: AsyncSession = Depends(get_db)):
+    # verify employee by emp_id (the FK column)
+    emp = (await db.execute(
+        select(Employee.emp_id).where(Employee.emp_id == payload.emp_id)
+    )).scalar_one_or_none()
+    if not emp:
+        return Result(code=404, message="Employee not found.", extra={}).http_response()
+
+    # duplicate check — same employee + class + section + subject
+    exists = (await db.execute(
+        select(EmployeeClassMapping.map_id).where(
+            EmployeeClassMapping.emp_id     == payload.emp_id,
+            EmployeeClassMapping.class_id   == payload.class_id,
+            EmployeeClassMapping.section_id == payload.section_id,
+            EmployeeClassMapping.subject_id == payload.subject_id,
+        )
+    )).scalar_one_or_none()
+    if exists:
+        return Result(code=409, message="Mapping already exists for this employee, class, section and subject.", extra={}).http_response()
+
+    # subject already mapped to another teacher in same class + section
+    subject_conflict = (await db.execute(
+        select(EmployeeClassMapping.emp_id)
+        .where(
+            EmployeeClassMapping.class_id   == payload.class_id,
+            EmployeeClassMapping.section_id == payload.section_id,
+            EmployeeClassMapping.subject_id == payload.subject_id,
+        )
+    )).scalar_one_or_none()
+    if subject_conflict:
+        # fetch the conflicting teacher name
+        conflict_emp = (await db.execute(
+            select(Employee.first_name, Employee.last_name)
+            .where(Employee.emp_id == subject_conflict)
+        )).one_or_none()
+        conflict_name = f"{conflict_emp.first_name} {conflict_emp.last_name or ''}".strip() if conflict_emp else "another teacher"
+        return Result(
+            code=409,
+            message=f"This subject is already assigned to {conflict_name} for this class and section.",
+            extra={"assigned_teacher": conflict_name},
+        ).http_response()
+
+    obj = EmployeeClassMapping(
+        emp_id=payload.emp_id,
+        role_id=None,
+        class_id=payload.class_id,
+        section_id=payload.section_id,
+        subject_id=payload.subject_id,
+    )
+    db.add(obj)
+    await db.commit()
+    await db.refresh(obj)
+
+    await cache.delete_pattern("class_teacher:list:*")
+    return Result(code=201, message="Subject teacher assigned successfully.", extra={
         "map_id":     obj.map_id,
         "emp_id":     obj.emp_id,
         "class_id":   obj.class_id,
+        "section_id": obj.section_id,
         "subject_id": obj.subject_id,
     }).http_response()
 

@@ -136,6 +136,49 @@ async def list_employee_attendance(
     return Result(code=200, message="Employee attendance fetched successfully.", extra=data).http_response()
 
 
+@attendance_router.get(
+    "/employee/attendance/get/{att_id}",
+    summary="Get employee attendance by ID",
+    responses={
+        200: {"content": {"application/json": {"example": {"code": 200, "message": "Employee attendance fetched successfully.", "result": {"att_id": 1, "emp_id": 1, "emp_name": "John Doe", "school_group_id": 1, "attendance_dt": "2024-06-01", "status": "P"}}}}},
+        404: {"content": {"application/json": {"example": {"code": 404, "message": "Attendance record not found.", "result": {}}}}},
+    },
+)
+async def get_employee_attendance(att_id: int, db: AsyncSession = Depends(get_db)):
+    key = f"emp_attendance:{att_id}"
+    cached = await cache.get(key)
+    if cached:
+        return Result(code=200, message="Employee attendance fetched successfully (cache).", extra=cached).http_response()
+
+    row = (await db.execute(
+        select(
+            EmployeeAttendance.att_id,
+            EmployeeAttendance.emp_id,
+            EmployeeAttendance.school_group_id,
+            EmployeeAttendance.attendance_dt,
+            EmployeeAttendance.status,
+            Employee.first_name,
+            Employee.last_name,
+        )
+        .outerjoin(Employee, EmployeeAttendance.emp_id == Employee.id)
+        .where(EmployeeAttendance.att_id == att_id)
+    )).one_or_none()
+
+    if not row:
+        return Result(code=404, message="Attendance record not found.", extra={}).http_response()
+
+    data = {
+        "att_id":          row.att_id,
+        "emp_id":          row.emp_id,
+        "emp_name":        f"{row.first_name or ''} {row.last_name or ''}".strip(),
+        "school_group_id": row.school_group_id,
+        "attendance_dt":   str(row.attendance_dt),
+        "status":          row.status,
+    }
+    await cache.set(key, data, expire=CACHE_TTL)
+    return Result(code=200, message="Employee attendance fetched successfully.", extra=data).http_response()
+
+
 @attendance_router.put(
     "/employee/attendance/update/{att_id}",
     summary="Update employee attendance status",
@@ -157,6 +200,7 @@ async def update_employee_attendance(
     obj.status = payload.status
     await db.commit()
 
+    await cache.delete(f"emp_attendance:{att_id}")
     await cache.delete_pattern("emp_attendance:list:*")
     return Result(code=200, message="Employee attendance updated successfully.", extra={
         "att_id": obj.att_id,
@@ -308,19 +352,33 @@ async def list_student_attendance(
 
 
 @attendance_router.put(
-    "/student/attendance/update/{att_id}",
+    "/student/attendance/update",
     summary="Update student attendance status",
     responses={
         200: {"content": {"application/json": {"example": {"code": 200, "message": "Student attendance updated successfully.", "result": {"att_id": 1, "status": "A"}}}}},
+        400: {"content": {"application/json": {"example": {"code": 400, "message": "Provide at least att_id or student_id + attendance_dt.", "result": {}}}}},
         404: {"content": {"application/json": {"example": {"code": 404, "message": "Attendance record not found.", "result": {}}}}},
     },
 )
 async def update_student_attendance(
-    att_id: int,
-    payload: StudentAttendanceUpdate,
+    payload:       StudentAttendanceUpdate,
+    att_id:        int | None  = Query(None, description="Filter by attendance record ID"),
+    student_id:    int | None  = Query(None, description="Filter by student ID"),
+    attendance_dt: date | None = Query(None, description="Filter by attendance date e.g. 2024-06-01"),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(StudentAttendance).where(StudentAttendance.att_id == att_id))
+    if att_id is None and student_id is None:
+        return Result(code=400, message="Provide either att_id or student_id.", extra={}).http_response()
+
+    stmt = select(StudentAttendance)
+    if att_id is not None:
+        stmt = stmt.where(StudentAttendance.att_id == att_id)
+    if student_id is not None:
+        stmt = stmt.where(StudentAttendance.student_id == student_id)
+    if attendance_dt is not None:
+        stmt = stmt.where(StudentAttendance.attendance_dt == attendance_dt)
+
+    result = await db.execute(stmt)
     obj = result.scalar_one_or_none()
     if not obj:
         return Result(code=404, message="Attendance record not found.", extra={}).http_response()
@@ -355,3 +413,115 @@ async def delete_student_attendance(att_id: int, db: AsyncSession = Depends(get_
 
     await cache.delete_pattern("student_attendance:list:*")
     return Result(code=200, message="Student attendance deleted successfully.", extra={"att_id": att_id}).http_response()
+
+
+# ══════════════════════════════════════════════
+# ATTENDANCE COUNT — TODAY
+# ══════════════════════════════════════════════
+
+@attendance_router.get(
+    "/student/attendance/count/today",
+    summary="Student attendance count for today",
+    responses={
+        200: {"content": {"application/json": {"example": {
+            "code": 200,
+            "message": "Student attendance count fetched successfully.",
+            "result": {
+                "date":       "2024-06-01",
+                "total":      300,
+                "present":    282,
+                "absent":     18,
+                "percentage": 94.0,
+            }
+        }}}}
+    },
+)
+async def student_attendance_count_today(
+    group_id:   int | None = Query(None, description="Filter by school group ID"),
+    class_id:   int | None = Query(None, description="Filter by class ID"),
+    section_id: int | None = Query(None, description="Filter by section ID"),
+    db: AsyncSession = Depends(get_db),
+):
+    today = date.today()
+    key   = f"student_attendance:count:{today}:{group_id}:{class_id}:{section_id}"
+    cached = await cache.get(key)
+    if cached:
+        return Result(code=200, message="Student attendance count fetched successfully (cache).", extra=cached).http_response()
+
+    stmt_base = select(func.count()).select_from(StudentAttendance)\
+        .where(StudentAttendance.attendance_dt == today)
+    if group_id:
+        stmt_base = stmt_base.where(StudentAttendance.school_group_id == group_id)
+    if class_id:
+        stmt_base = stmt_base.where(StudentAttendance.class_id == class_id)
+    if section_id:
+        stmt_base = stmt_base.where(StudentAttendance.section_id == section_id)
+
+    total   = (await db.execute(stmt_base)).scalar_one()
+    present = (await db.execute(
+        stmt_base.where(StudentAttendance.status == "P")
+    )).scalar_one()
+    absent     = total - present
+    percentage = round((present / total * 100), 1) if total > 0 else 0.0
+
+    data = {
+        "date":       str(today),
+        "total":      total,
+        "present":    present,
+        "absent":     absent,
+        "percentage": percentage,
+    }
+    if total > 0:
+        await cache.set(key, data, expire=300)
+    return Result(code=200, message="Student attendance count fetched successfully.", extra=data).http_response()
+
+
+@attendance_router.get(
+    "/employee/attendance/count/today",
+    summary="Employee attendance count for today",
+    responses={
+        200: {"content": {"application/json": {"example": {
+            "code": 200,
+            "message": "Employee attendance count fetched successfully.",
+            "result": {
+                "date":       "2024-06-01",
+                "total":      56,
+                "present":    50,
+                "absent":     6,
+                "percentage": 89.3,
+            }
+        }}}}
+    },
+)
+async def employee_attendance_count_today(
+    group_id: int | None = Query(None, description="Filter by school group ID"),
+    db: AsyncSession = Depends(get_db),
+):
+    today = date.today()
+    key   = f"emp_attendance:count:{today}:{group_id}"
+    cached = await cache.get(key)
+    if cached:
+        return Result(code=200, message="Employee attendance count fetched successfully (cache).", extra=cached).http_response()
+
+    stmt_base = select(func.count()).select_from(EmployeeAttendance)\
+        .where(EmployeeAttendance.attendance_dt == today)
+    if group_id:
+        stmt_base = stmt_base.where(EmployeeAttendance.school_group_id == group_id)
+
+    total   = (await db.execute(stmt_base)).scalar_one()
+    present = (await db.execute(
+        stmt_base.where(EmployeeAttendance.status == "P")
+    )).scalar_one()
+    absent     = total - present
+    percentage = round((present / total * 100), 1) if total > 0 else 0.0
+
+    data = {
+        "date":       str(today),
+        "total":      total,
+        "present":    present,
+        "absent":     absent,
+        "percentage": percentage,
+    }
+    if total > 0:
+        await cache.set(key, data, expire=300)
+    return Result(code=200, message="Employee attendance count fetched successfully.", extra=data).http_response()

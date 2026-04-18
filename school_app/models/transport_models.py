@@ -68,7 +68,7 @@ class VehicleRoutesMap(Base):
 
     id:            Mapped[int]           = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     route_id:      Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("routes.id", ondelete="SET NULL"), nullable=True)
-    vehicle_id:    Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("vehicle_details.id", ondelete="SET NULL"), nullable=True)
+    vehicle_id:    Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("vehicle_details.id", ondelete="SET NULL", name="fk_vrm_vehicle_id"), nullable=True)
     driver_name:   Mapped[str]           = mapped_column(String(50),  nullable=False)
     helper_name:   Mapped[str]           = mapped_column(String(50),  nullable=False)
     driver_mob_no: Mapped[Optional[str]] = mapped_column(String(15),  nullable=True)

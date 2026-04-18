@@ -77,6 +77,7 @@ _404 = {"content": {"application/json": {"example": {"code": 404, "message": "Le
     summary="Create an employee leave request (with optional attachment)",
     responses={
         201: {"content": {"application/json": {"example": {"code": 201, "message": "Leave request created successfully.", "result": _EXAMPLE}}}},
+        409: {"content": {"application/json": {"example": {"code": 409, "message": "A leave request already exists for this employee overlapping these dates.", "result": {}}}}},
     },
 )
 async def create_leave_request(
@@ -84,6 +85,21 @@ async def create_leave_request(
     attachment: UploadFile | None = File(None),
     db: AsyncSession = Depends(get_db),
 ):
+    if payload.emp_id:
+        from sqlalchemy import and_, or_
+        overlap = (await db.execute(
+            select(EmpLeaveRequest.id).where(
+                EmpLeaveRequest.emp_id == payload.emp_id,
+                or_(
+                    and_(EmpLeaveRequest.from_dt <= payload.from_dt, EmpLeaveRequest.to_date >= payload.from_dt),
+                    and_(EmpLeaveRequest.from_dt <= payload.to_date,  EmpLeaveRequest.to_date >= payload.to_date),
+                    and_(EmpLeaveRequest.from_dt >= payload.from_dt, EmpLeaveRequest.to_date <= payload.to_date),
+                )
+            )
+        )).scalar_one_or_none()
+        if overlap:
+            return Result(code=409, message="A leave request already exists for this employee overlapping these dates.", extra={}).http_response()
+
     obj = EmpLeaveRequest(
         **payload.model_dump(),
         attachments=await attachment.read() if attachment else None,

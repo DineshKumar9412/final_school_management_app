@@ -1,9 +1,9 @@
 # models/exam_models.py
-from sqlalchemy import BigInteger, String, DateTime, ForeignKey, Date, Boolean, Integer, DECIMAL, Time
+from sqlalchemy import BigInteger, String, DateTime, ForeignKey, Date, Boolean, Integer, DECIMAL
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 from database.base import Base
-from datetime import datetime, date, time
+from datetime import datetime, date
 
 
 class Grade(Base):
@@ -23,7 +23,7 @@ class Exam(Base):
 
     exam_id:          Mapped[int]        = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     exam_name:        Mapped[str]        = mapped_column(String(100), nullable=False)
-    school_stream_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("school_stream.school_stream_id"))
+    class_id:         Mapped[int | None] = mapped_column(BigInteger, ForeignKey("school_stream_class.class_id", ondelete="SET NULL"), nullable=True)
     session_yr:       Mapped[str | None] = mapped_column(String(10))
     exam_description: Mapped[str | None] = mapped_column(String(100))
     is_active:        Mapped[bool]       = mapped_column(Boolean, default=True)
@@ -34,22 +34,18 @@ class Exam(Base):
 class ExamTimetable(Base):
     __tablename__ = "exam_timetable"
 
-    timetable_id:     Mapped[int]             = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    exam_id:          Mapped[int | None]      = mapped_column(BigInteger, ForeignKey("exams.exam_id"))
-    school_stream_id: Mapped[int | None]      = mapped_column(Integer, ForeignKey("school_stream.school_stream_id"))
-    school_group_id:  Mapped[int | None]      = mapped_column(Integer, ForeignKey("school_group.school_group_id"))
-    subject_id:       Mapped[int | None]      = mapped_column(Integer, ForeignKey("school_stream_subject.subject_id"))
-    total_marks:      Mapped[float | None]    = mapped_column(DECIMAL(18, 2))
-    pass_mark:        Mapped[float | None]    = mapped_column(DECIMAL(18, 2))
-    exam_start_date:  Mapped[datetime | None] = mapped_column(DateTime)
-    exam_end_date:    Mapped[datetime | None] = mapped_column(DateTime)
-    start_time:       Mapped[time]            = mapped_column(Time, nullable=False)
-    start_ampm:       Mapped[str]             = mapped_column(String(2), nullable=False, comment="AM / PM")
-    end_time:         Mapped[time]            = mapped_column(Time, nullable=False)
-    end_ampm:         Mapped[str]             = mapped_column(String(2), nullable=False, comment="AM / PM")
-    is_active:        Mapped[bool]            = mapped_column(Boolean, default=True)
-    created_at:       Mapped[datetime]        = mapped_column(DateTime, server_default=func.current_timestamp())
-    updated_at:       Mapped[datetime]        = mapped_column(DateTime, server_default=func.current_timestamp(), onupdate=func.current_timestamp())
+    timetable_id:    Mapped[int]             = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    exam_id:         Mapped[int | None]      = mapped_column(BigInteger, ForeignKey("exams.exam_id", ondelete="SET NULL"), nullable=True)
+    class_id:        Mapped[int | None]      = mapped_column(BigInteger, ForeignKey("school_stream_class.class_id", ondelete="SET NULL"), nullable=True)
+    school_group_id: Mapped[int | None]      = mapped_column(BigInteger, ForeignKey("school_group.school_group_id", ondelete="SET NULL"), nullable=True)
+    subject_id:      Mapped[int | None]      = mapped_column(BigInteger, ForeignKey("school_stream_subject.subject_id", ondelete="SET NULL"), nullable=True)
+    total_marks:     Mapped[float | None]    = mapped_column(DECIMAL(18, 2))
+    pass_mark:       Mapped[float | None]    = mapped_column(DECIMAL(18, 2))
+    exam_start_date: Mapped[datetime | None] = mapped_column(DateTime)
+    exam_end_date:   Mapped[datetime | None] = mapped_column(DateTime)
+    is_active:       Mapped[bool]            = mapped_column(Boolean, default=True)
+    created_at:      Mapped[datetime]        = mapped_column(DateTime, server_default=func.current_timestamp())
+    updated_at:      Mapped[datetime]        = mapped_column(DateTime, server_default=func.current_timestamp(), onupdate=func.current_timestamp())
 
 
 class StudentMarks(Base):

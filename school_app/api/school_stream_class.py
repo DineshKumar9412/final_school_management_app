@@ -209,9 +209,9 @@ async def delete_class(class_id: int, db: AsyncSession = Depends(get_db)):
         }}}},
     },
 )
-async def dropdown_classes(school_stream_id: int | None = Query(None), search: str | None = Query(None), db: AsyncSession = Depends(get_db)):
+async def dropdown_classes(school_stream_id: int | None = Query(None), school_group_id: int | None = Query(None), search: str | None = Query(None), db: AsyncSession = Depends(get_db)):
     search = clean_search(search)
-    key = f"dropdown:classes:{school_stream_id}:{search}"
+    key = f"dropdown:classes:{school_stream_id}:{school_group_id}:{search}"
     cached = await cache.get(key)
     if cached:
         return Result(code=200, message="Dropdown fetched (cache).", extra=cached).http_response()
@@ -227,6 +227,8 @@ async def dropdown_classes(school_stream_id: int | None = Query(None), search: s
     )
     if school_stream_id:
         stmt = stmt.where(SchoolStreamClass.school_stream_id == school_stream_id)
+    if school_group_id:
+        stmt = stmt.where(SchoolStreamClass.school_group_id == school_group_id)
     if search:
         stmt = stmt.where(SchoolStreamClass.class_code.like(f"%{search}%"))
 

@@ -25,8 +25,8 @@ def clean_search(search: str | None) -> str | None:
 def _item_key(subject_id: int) -> str:
     return f"school_stream_subject:{subject_id}"
 
-def _list_key(page: int, limit: int, search: str | None) -> str:
-    return f"school_stream_subject:list:{page}:{limit}:{search}"
+def _list_key(page: int, limit: int, search: str | None, class_id: int | None = None) -> str:
+    return f"school_stream_subject:list:{page}:{limit}:{search}:{class_id}"
 
 def _row_to_dict(r) -> dict:
     return {
@@ -92,13 +92,14 @@ async def create_subject(payload: SchoolStreamSubjectCreate, db: AsyncSession = 
     },
 )
 async def list_subjects(
-    page:   int        = Query(1,    ge=1),
-    limit:  int        = Query(10,   ge=1, le=100),
-    search: str | None = Query(None, description="Search by subject_name, or type 'active'/'inactive'"),
+    page:     int        = Query(1,    ge=1),
+    limit:    int        = Query(10,   ge=1, le=100),
+    search:   str | None = Query(None, description="Search by subject_name, or type 'active'/'inactive'"),
+    class_id: int | None = Query(None, description="Filter by class ID"),
     db: AsyncSession = Depends(get_db),
 ):
     search = clean_search(search)
-    key = _list_key(page, limit, search)
+    key = _list_key(page, limit, search, class_id)
     cached = await cache.get(key)
     if cached:
         return Result(code=200, message="Subjects fetched successfully (cache).", extra=cached).http_response()
@@ -112,6 +113,9 @@ async def list_subjects(
         stmt = stmt.where(SchoolStreamSubject.status == "active", SchoolStreamSubject.subject_name.like(f"%{search}%"))
     else:
         stmt = stmt.where(SchoolStreamSubject.status == "active")
+
+    if class_id is not None:
+        stmt = stmt.where(SchoolStreamSubject.class_id == class_id)
 
     total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
     rows = await db.execute(stmt.order_by(SchoolStreamSubject.subject_id).offset(offset).limit(limit))

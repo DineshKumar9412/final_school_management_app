@@ -111,9 +111,21 @@ _404 = {"content": {"application/json": {"example": {"code": 404, "message": "Di
     summary="Create a student diary entry",
     responses={
         201: {"content": {"application/json": {"example": {"code": 201, "message": "Diary entry created successfully.", "result": _EXAMPLE}}}},
+        409: {"content": {"application/json": {"example": {"code": 409, "message": "Diary entry already exists for this student, subject and date.", "result": {}}}}},
     },
 )
 async def create_diary(payload: StudentDiaryCreate, db: AsyncSession = Depends(get_db)):
+    if payload.student_id and payload.dairy_date and payload.subject_id:
+        exists = (await db.execute(
+            select(StudentDiary.id).where(
+                StudentDiary.student_id == payload.student_id,
+                StudentDiary.dairy_date == payload.dairy_date,
+                StudentDiary.subject_id == payload.subject_id,
+            )
+        )).scalar_one_or_none()
+        if exists:
+            return Result(code=409, message="Diary entry already exists for this student, subject and date.", extra={}).http_response()
+
     obj = StudentDiary(**payload.model_dump())
     db.add(obj)
     await db.commit()

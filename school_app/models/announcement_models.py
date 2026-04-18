@@ -1,5 +1,5 @@
 # models/announcement_models.py
-from sqlalchemy import String, BigInteger, ForeignKey, func, LargeBinary
+from sqlalchemy import String, BigInteger, ForeignKey, func, LargeBinary, Enum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database.base import Base
 from datetime import datetime
@@ -16,6 +16,7 @@ class Announcement(Base):
     description: Mapped[Optional[str]]  = mapped_column(String(1000), nullable=True)
     file:        Mapped[Optional[bytes]] = mapped_column(LargeBinary, nullable=True)
     url:         Mapped[Optional[str]]  = mapped_column(String(1000), nullable=True)
+    category:    Mapped[Optional[str]]  = mapped_column(Enum("EXAMS", "EVENTS", "CAMPUS", "GENERAL"), nullable=True)
     created_at:  Mapped[datetime]       = mapped_column(server_default=func.current_timestamp(), nullable=False)
     updated_at:  Mapped[datetime]       = mapped_column(
         server_default=func.current_timestamp(),

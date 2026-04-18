@@ -1,5 +1,5 @@
 # api/notification.py
-from fastapi import APIRouter, Depends, Query, UploadFile, File
+from fastapi import APIRouter, Depends, Query, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
@@ -46,12 +46,21 @@ def _row_to_dict(n: Notification, role_name: str | None) -> dict:
 
 
 _EXAMPLE = {
-    "id": 1, "title": "School Closed",
+    "id": 1,
+    "title": "School Closed",
     "message": "School will remain closed tomorrow.",
-    "role_id": 1, "role_name": "Teacher",
+    "role_id": 1,
+    "role_name": "Teacher",
     "has_image": False,
     "created_at": "2024-01-01T10:00:00",
     "updated_at": "2024-01-01T10:00:00",
+}
+_LIST_EXAMPLE = {
+    "code": 200, "message": "Notifications fetched successfully.",
+    "result": {
+        "total": 1, "page": 1, "limit": 10,
+        "data": [_EXAMPLE],
+    }
 }
 _404 = {"content": {"application/json": {"example": {"code": 404, "message": "Notification not found.", "result": {}}}}}
 
@@ -63,15 +72,25 @@ _404 = {"content": {"application/json": {"example": {"code": 404, "message": "No
     summary="Create a notification (with optional image)",
     responses={
         201: {"content": {"application/json": {"example": {"code": 201, "message": "Notification created successfully.", "result": _EXAMPLE}}}},
+        409: {"content": {"application/json": {"example": {"code": 409, "message": "Notification with this title already exists for this role.", "result": {}}}}},
     },
 )
 async def create_notification(
-    title:   str           = Query(..., max_length=100),
-    message: str | None    = Query(None),
-    role_id: int | None    = Query(None),
+    title:   str            = Form(..., max_length=100),
+    message: str | None     = Form(None),
+    role_id: int | None     = Form(None),
     image:   UploadFile | None = File(None),
     db: AsyncSession = Depends(get_db),
 ):
+    exists = (await db.execute(
+        select(Notification.id).where(
+            Notification.title   == title,
+            Notification.role_id == role_id,
+        )
+    )).scalar_one_or_none()
+    if exists:
+        return Result(code=409, message="Notification with this title already exists for this role.", extra={}).http_response()
+
     image_bytes = await image.read() if image else None
 
     obj = Notification(
@@ -101,10 +120,7 @@ async def create_notification(
     "/list",
     summary="List all notifications (paginated)",
     responses={
-        200: {"content": {"application/json": {"example": {
-            "code": 200, "message": "Notifications fetched successfully.",
-            "result": {"total": 2, "page": 1, "limit": 10, "data": [_EXAMPLE]},
-        }}}},
+        200: {"content": {"application/json": {"example": _LIST_EXAMPLE}}},
     },
 )
 async def list_notifications(
@@ -212,9 +228,9 @@ async def get_notification_image(notification_id: int, db: AsyncSession = Depend
 )
 async def update_notification(
     notification_id: int,
-    title:   str | None    = Query(None, max_length=100),
-    message: str | None    = Query(None),
-    role_id: int | None    = Query(None),
+    title:   str | None     = Form(None, max_length=100),
+    message: str | None     = Form(None),
+    role_id: int | None     = Form(None),
     image:   UploadFile | None = File(None),
     db: AsyncSession = Depends(get_db),
 ):

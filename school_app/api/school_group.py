@@ -200,7 +200,7 @@ async def dropdown_school_groups(school_id: int | None = Query(None), search: st
     stmt = stmt.order_by(SchoolGroup.group_name)
 
     rows = await db.execute(stmt)
-    data = [{"id": r.school_group_id, "name": r.group_name} for r in rows.all()]
+    data = [{"school_group_id": r.school_group_id, "name": r.group_name} for r in rows.all()]
     if data:  # only cache when data exists
         await cache.set(key, data, expire=CACHE_TTL)
     return Result(code=200, message="Dropdown fetched.", extra=data).http_response()

@@ -19,7 +19,9 @@ from response.result import Result
 from io import BytesIO
 import pandas as pd
 
-employee_router = APIRouter(tags=["EMPLOYEE"])
+from security.valid_session import valid_session
+
+employee_router = APIRouter(tags=["EMPLOYEE"], dependencies=[Depends(valid_session)])
 
 CACHE_TTL = 86400
 STATUS_VALUES = {"active", "inactive"}
@@ -131,6 +133,29 @@ async def update_role(role_id: int, payload: RoleUpdate, db: AsyncSession = Depe
     return Result(code=200, message="Role updated successfully.", extra={
         "role_id": obj.role_id, "role_name": obj.role_name
     }).http_response()
+
+
+# ─── ROLE DROPDOWN ───────────────────────────
+
+@employee_router.get("/role/all", summary="Dropdown: Roles")
+async def dropdown_roles(
+    search: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    key = f"roles:dropdown:{search}"
+    cached = await cache.get(key)
+    if cached:
+        return Result(code=200, message="Dropdown fetched (cache).", extra=cached).http_response()
+
+    stmt = select(Role.role_id, Role.role_name).where(Role.is_active == True)
+    if search:
+        stmt = stmt.where(Role.role_name.like(f"%{search}%"))
+
+    rows = (await db.execute(stmt.order_by(Role.role_name))).all()
+    data = [{"role_id": r.role_id, "role_name": r.role_name} for r in rows]
+    if data:
+        await cache.set(key, data, expire=CACHE_TTL)
+    return Result(code=200, message="Dropdown fetched.", extra=data).http_response()
 
 
 # ══════════════════════════════════════════════

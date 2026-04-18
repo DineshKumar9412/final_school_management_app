@@ -13,7 +13,7 @@ class GenderEnum(str, Enum):
 
 class EmployeeStatusEnum(str, Enum):
     teaching     = "teaching"
-    non_teaching = "non teaching"
+    non_teaching = "non_teaching"
 
 
 # ══════════════════════════════════════════════

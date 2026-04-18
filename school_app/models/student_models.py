@@ -103,6 +103,7 @@ class StudentClassMapping(Base):
     student_id:      Mapped[int]            = mapped_column(BigInteger, ForeignKey("student.student_id", ondelete="CASCADE"), nullable=False)
     class_id:        Mapped[int]            = mapped_column(BigInteger, ForeignKey("school_stream_class.class_id", ondelete="CASCADE"), nullable=False)
     section_id:      Mapped[Optional[int]]  = mapped_column(BigInteger, ForeignKey("school_stream_class_section.section_id", ondelete="SET NULL"), nullable=True)
+    stream_id:       Mapped[Optional[int]]  = mapped_column(BigInteger, ForeignKey("school_stream.school_stream_id", ondelete="SET NULL"), nullable=True)
     enroll_date:     Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     valid_from_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     valid_to_date:   Mapped[Optional[date]] = mapped_column(Date, nullable=True)
@@ -119,3 +120,24 @@ class StudentClassMapping(Base):
 
     def __repr__(self) -> str:
         return f"<StudentClassMapping id={self.id} student_id={self.student_id} class_id={self.class_id}>"
+
+
+# ─────────────────────────────────────────────
+# ClassPromotionMap
+# ─────────────────────────────────────────────
+
+class ClassPromotionMap(Base):
+    __tablename__ = "class_promotion_map"
+
+    id:           Mapped[int]           = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    from_class_id: Mapped[int]          = mapped_column(BigInteger, ForeignKey("school_stream_class.class_id", ondelete="CASCADE"), nullable=False)
+    to_class_id:  Mapped[int]           = mapped_column(BigInteger, ForeignKey("school_stream_class.class_id", ondelete="CASCADE"), nullable=False)
+    created_at:   Mapped[datetime]      = mapped_column(server_default=func.current_timestamp(), nullable=False)
+    updated_at:   Mapped[datetime]      = mapped_column(
+        server_default=func.current_timestamp(),
+        onupdate=func.current_timestamp(),
+        nullable=False,
+    )
+
+    def __repr__(self) -> str:
+        return f"<ClassPromotionMap id={self.id} from={self.from_class_id} to={self.to_class_id}>"

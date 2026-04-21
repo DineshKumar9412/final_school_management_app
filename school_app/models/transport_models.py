@@ -92,7 +92,7 @@ class TransportationStudent(Base):
     __tablename__ = "transportation_student"
 
     id:         Mapped[int]           = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    vehicle_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("vehicle_details.id",                   ondelete="SET NULL"), nullable=True)
+    vehicle_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("vehicle_details.id", ondelete="SET NULL", name="fk_trans_veh_id"), nullable=True)
     class_id:   Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("school_stream_class.class_id",         ondelete="SET NULL"), nullable=True)
     section_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("school_stream_class_section.section_id", ondelete="SET NULL"), nullable=True)
     student_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("student.student_id",                   ondelete="SET NULL"), nullable=True)

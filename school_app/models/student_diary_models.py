@@ -16,7 +16,7 @@ class StudentDiary(Base):
     subject_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("school_stream_subject.subject_id", ondelete="SET NULL"), nullable=True)
     task_title: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     dairy_date: Mapped[Optional[date]]= mapped_column(Date, nullable=True)
-    status:     Mapped[Optional[str]] = mapped_column(String(1), nullable=True)
+    status:     Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime]      = mapped_column(server_default=func.current_timestamp(), nullable=False)
     updated_at: Mapped[datetime]      = mapped_column(
         server_default=func.current_timestamp(),

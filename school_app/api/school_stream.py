@@ -61,7 +61,7 @@ async def create_school_stream(payload: SchoolStreamCreate, db: AsyncSession = D
 
     data = SchoolStreamResponse.model_validate(obj).model_dump(mode="json")
     await cache.delete_pattern("school_stream:list:*")
-    await cache.delete_pattern("school_stream:dropdown:*")
+    await cache.delete_pattern("dropdown:streams:*")
     return Result(code=201, message="School stream created successfully.", extra=data).http_response()
 
 
@@ -166,7 +166,7 @@ async def update_school_stream(stream_id: int, payload: SchoolStreamUpdate, db: 
 
     await cache.set(_item_key(stream_id), data, expire=CACHE_TTL)
     await cache.delete_pattern("school_stream:list:*")
-    await cache.delete_pattern("school_stream:dropdown:*")
+    await cache.delete_pattern("dropdown:streams:*")
     return Result(code=200, message="School stream updated successfully.", extra=data).http_response()
 
 
@@ -192,10 +192,13 @@ async def delete_school_stream(stream_id: int, db: AsyncSession = Depends(get_db
     await db.commit()
     await cache.delete(_item_key(stream_id))
     await cache.delete_pattern("school_stream:list:*")
-    await cache.delete_pattern("school_stream:dropdown:*")
+    await cache.delete_pattern("dropdown:streams:*")
     await cache.delete_pattern("school_stream_class:*")
+    await cache.delete_pattern("dropdown:classes:*")
     await cache.delete_pattern("school_stream_section:*")
+    await cache.delete_pattern("dropdown:sections:*")
     await cache.delete_pattern("school_stream_subject:*")
+    await cache.delete_pattern("dropdown:subjects:*")
     await cache.delete_pattern("dropdown:*")
     return Result(code=200, message="School stream and all related records deleted successfully.", extra={"school_stream_id": stream_id}).http_response()
 

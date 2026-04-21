@@ -1,4 +1,6 @@
 # api/notification.py
+import os
+import uuid
 from fastapi import APIRouter, Depends, Query, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -7,13 +9,15 @@ from database.session import get_db
 from database.redis_cache import cache
 from models.notification_models import Notification
 from models.employee_models import Role
-from schemas.notification_schemas import NotificationCreate, NotificationUpdate
 from security.valid_session import valid_session
 from response.result import Result
 
 notification_router = APIRouter(tags=["NOTIFICATION"], dependencies=[Depends(valid_session)])
 
 CACHE_TTL = 86400
+
+MEDIA_ROOT = "/var/www/html/images/"
+MEDIA_URL  = "http://69.62.77.182/images/"
 
 
 # ─── helpers ──────────────────────────────────────────────────────────────────
@@ -32,6 +36,33 @@ def _list_key(page: int, limit: int, search: str | None, role_id: int | None) ->
     return f"notification:list:{page}:{limit}:{search}:{role_id}"
 
 
+async def _save_image(image: UploadFile) -> str:
+    """Save uploaded image to MEDIA_ROOT and return the URL path."""
+
+    ext      = os.path.splitext(image.filename or "image.jpg")[1] or ".jpg"
+    filename = f"notification_{uuid.uuid4().hex}{ext}"
+    filepath = os.path.join(MEDIA_ROOT, filename)
+
+    contents = await image.read()
+
+    with open(filepath, "wb") as f:
+        f.write(contents)
+
+    return f"{MEDIA_URL}{filename}"
+
+
+def _delete_image(image_url: str | None) -> None:
+    """Delete image file from disk if it exists."""
+    if not image_url:
+        return
+    # handle both old path format and new URL format
+    filename = image_url.replace(MEDIA_URL, "", 1).replace(MEDIA_ROOT, "", 1)
+    filename = os.path.basename(filename)
+    filepath = os.path.join(MEDIA_ROOT, filename)
+    if os.path.exists(filepath):
+        os.remove(filepath)
+
+
 def _row_to_dict(n: Notification, role_name: str | None) -> dict:
     return {
         "id":         n.id,
@@ -39,7 +70,7 @@ def _row_to_dict(n: Notification, role_name: str | None) -> dict:
         "message":    n.message,
         "role_id":    n.role_id,
         "role_name":  role_name,
-        "has_image":  n.image is not None,
+        "image_url":  n.image,
         "created_at": n.created_at.isoformat(),
         "updated_at": n.updated_at.isoformat(),
     }
@@ -51,7 +82,7 @@ _EXAMPLE = {
     "message": "School will remain closed tomorrow.",
     "role_id": 1,
     "role_name": "Teacher",
-    "has_image": False,
+    "image_url": "/images/notification_abc123.jpg",
     "created_at": "2024-01-01T10:00:00",
     "updated_at": "2024-01-01T10:00:00",
 }
@@ -76,9 +107,9 @@ _404 = {"content": {"application/json": {"example": {"code": 404, "message": "No
     },
 )
 async def create_notification(
-    title:   str            = Form(..., max_length=100),
-    message: str | None     = Form(None),
-    role_id: int | None     = Form(None),
+    title:   str               = Form(..., max_length=100),
+    message: str | None        = Form(None),
+    role_id: int | None        = Form(None),
     image:   UploadFile | None = File(None),
     db: AsyncSession = Depends(get_db),
 ):
@@ -91,13 +122,13 @@ async def create_notification(
     if exists:
         return Result(code=409, message="Notification with this title already exists for this role.", extra={}).http_response()
 
-    image_bytes = await image.read() if image else None
+    image_url = await _save_image(image) if image else None
 
     obj = Notification(
         title=title,
         message=message,
         role_id=role_id,
-        image=image_bytes,
+        image=image_url,
     )
     db.add(obj)
     await db.commit()
@@ -138,8 +169,7 @@ async def list_notifications(
         return Result(code=200, message="Notifications fetched successfully (cache).", extra=cached).http_response()
 
     offset = (page - 1) * limit
-
-    stmt = select(Notification)
+    stmt   = select(Notification)
     if role_id is not None:
         stmt = stmt.where(Notification.role_id == role_id)
     if search:
@@ -198,24 +228,6 @@ async def get_notification(notification_id: int, db: AsyncSession = Depends(get_
     return Result(code=200, message="Notification fetched successfully.", extra=data).http_response()
 
 
-# ─── GET IMAGE ────────────────────────────────────────────────────────────────
-
-@notification_router.get(
-    "/image/{notification_id}",
-    summary="Get notification image (binary)",
-    responses={
-        200: {"content": {"image/*": {}}},
-        404: _404,
-    },
-)
-async def get_notification_image(notification_id: int, db: AsyncSession = Depends(get_db)):
-    from fastapi.responses import Response
-    obj = (await db.execute(select(Notification).where(Notification.id == notification_id))).scalar_one_or_none()
-    if obj is None or obj.image is None:
-        return Result(code=404, message="Image not found.", extra={}).http_response()
-    return Response(content=obj.image, media_type="image/jpeg")
-
-
 # ─── UPDATE ───────────────────────────────────────────────────────────────────
 
 @notification_router.put(
@@ -228,9 +240,9 @@ async def get_notification_image(notification_id: int, db: AsyncSession = Depend
 )
 async def update_notification(
     notification_id: int,
-    title:   str | None     = Form(None, max_length=100),
-    message: str | None     = Form(None),
-    role_id: int | None     = Form(None),
+    title:   str | None        = Form(None, max_length=100),
+    message: str | None        = Form(None),
+    role_id: int | None        = Form(None),
     image:   UploadFile | None = File(None),
     db: AsyncSession = Depends(get_db),
 ):
@@ -241,7 +253,11 @@ async def update_notification(
     if title   is not None: obj.title   = title
     if message is not None: obj.message = message
     if role_id is not None: obj.role_id = role_id
-    if image   is not None: obj.image   = await image.read()
+
+    if image is not None:
+        # delete old image from disk first
+        _delete_image(obj.image)
+        obj.image = await _save_image(image)
 
     await db.commit()
     await db.refresh(obj)
@@ -271,6 +287,9 @@ async def delete_notification(notification_id: int, db: AsyncSession = Depends(g
     obj = (await db.execute(select(Notification).where(Notification.id == notification_id))).scalar_one_or_none()
     if obj is None:
         return Result(code=404, message="Notification not found.", extra={}).http_response()
+
+    # delete image file from disk
+    _delete_image(obj.image)
 
     await db.delete(obj)
     await db.commit()

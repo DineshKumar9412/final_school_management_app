@@ -55,6 +55,7 @@ async def create_school_group(payload: SchoolGroupCreateRequest, db: AsyncSessio
 
     data = SchoolGroupResponse.model_validate(group).model_dump(mode="json")
     await cache.delete_pattern("school_groups:*")
+    await cache.delete_pattern("dropdown:school_groups:*")
     return Result(code=201, message="School group created successfully.", extra=data).http_response()
 
 

@@ -5,7 +5,6 @@ from datetime import datetime, timedelta
 from random import randint
 
 from models.auth_models import OtpVerification
-from helper.pushnotification import send_push_notification
 
 
 MAX_ATTEMPTS       = 3
@@ -46,10 +45,12 @@ async def _send_otp_logic(identifier: str, db: AsyncSession, fcb_token: str) -> 
     db.add(new_otp)
     await db.commit()
 
+    # Send FCM — failure is non-fatal, OTP is already saved
     try:
+        from helper.pushnotification import send_push_notification
         send_push_notification(device_token=fcb_token, otp=otp)
-    except Exception:
-        await db.rollback()
+    except Exception as e:
+        print(f"[OTP] FCM send failed (non-fatal): {e}")
 
     return otp
 

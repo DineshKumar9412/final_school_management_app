@@ -99,7 +99,7 @@ async def create_section(payload: SchoolStreamClassSectionCreate, db: AsyncSessi
     row = (await db.execute(_joined_stmt().where(SchoolStreamClassSection.section_id == obj.section_id))).one()
     data = _row_to_dict(row)
     await cache.delete_pattern("school_stream_section:list:*")
-    await cache.delete_pattern("school_stream_section:dropdown:*")
+    await cache.delete_pattern("dropdown:sections:*")
     return Result(code=201, message="Section created successfully.", extra=data).http_response()
 
 
@@ -193,7 +193,7 @@ async def update_section(section_id: int, payload: SchoolStreamClassSectionUpdat
     data = _row_to_dict(row)
     await cache.set(_item_key(section_id), data, expire=CACHE_TTL)
     await cache.delete_pattern("school_stream_section:list:*")
-    await cache.delete_pattern("school_stream_section:dropdown:*")
+    await cache.delete_pattern("dropdown:sections:*")
     return Result(code=200, message="Section updated successfully.", extra=data).http_response()
 
 
@@ -213,7 +213,7 @@ async def delete_section(section_id: int, db: AsyncSession = Depends(get_db)):
     await db.commit()
     await cache.delete(_item_key(section_id))
     await cache.delete_pattern("school_stream_section:list:*")
-    await cache.delete_pattern("school_stream_section:dropdown:*")
+    await cache.delete_pattern("dropdown:sections:*")
     return Result(code=200, message="Section deleted successfully.", extra={"section_id": section_id}).http_response()
 
 

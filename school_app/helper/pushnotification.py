@@ -8,11 +8,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 firebase_json = os.getenv("FIREBASE_SERVICE_ACCOUNT")
-cred_dict = json.loads(firebase_json)
 
-if not firebase_admin._apps:
-    cred = credentials.Certificate(cred_dict)
-    firebase_admin.initialize_app(cred)
+if firebase_json and not firebase_admin._apps:
+    try:
+        cred_dict = json.loads(firebase_json)
+        cred = credentials.Certificate(cred_dict)
+        firebase_admin.initialize_app(cred)
+    except Exception as e:
+        print(f"[Firebase] Init failed: {e}")
 
 def send_alarm_notification(device_token: str, message: str, slot_time: str) -> bool:
     try:

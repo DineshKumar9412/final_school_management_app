@@ -11,7 +11,7 @@ class StudentDiaryCreate(BaseModel):
     subject_id: Optional[int]  = None
     task_title: Optional[str]  = Field(None, max_length=100)
     dairy_date: Optional[date] = None
-    status:     Optional[str]  = Field(None, max_length=1)
+    status:     Optional[str]  = Field(None, max_length=100)
 
     model_config = {
         "json_schema_extra": {

@@ -79,7 +79,7 @@ async def create_subject(payload: SchoolStreamSubjectCreate, db: AsyncSession = 
     row = (await db.execute(_joined_stmt().where(SchoolStreamSubject.subject_id == obj.subject_id))).one()
     data = _row_to_dict(row)
     await cache.delete_pattern("school_stream_subject:list:*")
-    await cache.delete_pattern("school_stream_subject:dropdown:*")
+    await cache.delete_pattern("dropdown:subjects:*")
     return Result(code=201, message="Subject created successfully.", extra=data).http_response()
 
 
@@ -167,7 +167,7 @@ async def update_subject(subject_id: int, payload: SchoolStreamSubjectUpdate, db
     data = _row_to_dict(row)
     await cache.set(_item_key(subject_id), data, expire=CACHE_TTL)
     await cache.delete_pattern("school_stream_subject:list:*")
-    await cache.delete_pattern("school_stream_subject:dropdown:*")
+    await cache.delete_pattern("dropdown:subjects:*")
     return Result(code=200, message="Subject updated successfully.", extra=data).http_response()
 
 
@@ -187,7 +187,7 @@ async def delete_subject(subject_id: int, db: AsyncSession = Depends(get_db)):
     await db.commit()
     await cache.delete(_item_key(subject_id))
     await cache.delete_pattern("school_stream_subject:list:*")
-    await cache.delete_pattern("school_stream_subject:dropdown:*")
+    await cache.delete_pattern("dropdown:subjects:*")
     return Result(code=200, message="Subject deleted successfully.", extra={"subject_id": subject_id}).http_response()
 
 

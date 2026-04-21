@@ -1,7 +1,7 @@
 # api/student_diary.py
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 
 from database.session import get_db
 from database.redis_cache import cache
@@ -173,6 +173,8 @@ async def list_diaries(
 
     offset = (page - 1) * limit
     stmt   = select(StudentDiary)
+    if search:
+        stmt = stmt.outerjoin(Student, Student.student_id == StudentDiary.student_id)
 
     if student_id is not None:
         stmt = stmt.where(StudentDiary.student_id == student_id)
@@ -187,7 +189,14 @@ async def list_diaries(
     if status is not None:
         stmt = stmt.where(StudentDiary.status == status)
     if search:
-        stmt = stmt.where(StudentDiary.task_title.like(f"%{search}%"))
+        stmt = stmt.where(
+            or_(
+                StudentDiary.task_title.like(f"%{search}%"),
+                func.concat(Student.first_name, ' ', Student.last_name).like(f"%{search}%"),
+                Student.first_name.like(f"%{search}%"),
+                Student.last_name.like(f"%{search}%"),
+            )
+        )
 
     total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
     rows  = (await db.execute(

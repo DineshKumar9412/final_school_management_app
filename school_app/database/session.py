@@ -26,6 +26,12 @@ engine = create_async_engine(
     echo=False,
     pool_size=10,
     max_overflow=20,
+    pool_pre_ping=True,        # test connection before using from pool
+    pool_recycle=1800,         # recycle connections every 30 minutes
+    pool_timeout=30,           # wait max 30s for a connection
+    connect_args={
+        "connect_timeout": 10, # TCP connect timeout
+    },
 )
 
 AsyncSessionLocal = async_sessionmaker(

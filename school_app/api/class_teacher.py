@@ -12,7 +12,7 @@ The list API groups records by class + section and returns:
 """
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, func
 
 from database.session import get_db
 from database.redis_cache import cache
@@ -118,6 +118,7 @@ async def list_class_section_teachers(
         stmt = stmt.where(or_(
             Employee.first_name.like(s),
             Employee.last_name.like(s),
+            func.concat(Employee.first_name, ' ', Employee.last_name).like(s),
             SchoolStreamSubject.subject_name.like(s),
             SchoolStreamClass.class_code.like(s),
         ))

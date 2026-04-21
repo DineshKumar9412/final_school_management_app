@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, Query, UploadFile, File
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 
 from database.session import get_db
 from database.redis_cache import cache
@@ -147,6 +147,8 @@ async def list_leave_requests(
 
     offset = (page - 1) * limit
     stmt   = select(EmpLeaveRequest)
+    if search:
+        stmt = stmt.outerjoin(Employee, Employee.id == EmpLeaveRequest.emp_id)
 
     if emp_id is not None:
         stmt = stmt.where(EmpLeaveRequest.emp_id == emp_id)
@@ -159,7 +161,14 @@ async def list_leave_requests(
     if to_date is not None:
         stmt = stmt.where(EmpLeaveRequest.to_date <= to_date)
     if search:
-        stmt = stmt.where(EmpLeaveRequest.reason.like(f"%{search}%"))
+        stmt = stmt.where(
+            or_(
+                EmpLeaveRequest.reason.like(f"%{search}%"),
+                Employee.first_name.like(f"%{search}%"),
+                Employee.last_name.like(f"%{search}%"),
+                func.concat(Employee.first_name, ' ', Employee.last_name).like(f"%{search}%"),
+            )
+        )
 
     total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
     rows  = (await db.execute(

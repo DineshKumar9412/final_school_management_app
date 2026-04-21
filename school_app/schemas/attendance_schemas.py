@@ -8,6 +8,7 @@ import enum
 class AttendanceStatusEnum(str, enum.Enum):
     P = "P"  # Present
     A = "A"  # Absent
+    L = "L"  # Leave
 
 
 # ══════════════════════════════════════════════

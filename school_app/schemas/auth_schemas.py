@@ -16,7 +16,7 @@ class AndroidLoginRequest(BaseModel):
 
 
 class UserInfo(BaseModel):
-    user_id: str
+    user_id: int
     role: str
     empl_id: Optional[int] = None
     stud_id: Optional[str] = None  # student_roll_id

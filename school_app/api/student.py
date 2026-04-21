@@ -395,6 +395,7 @@ async def list_students(
         stmt = stmt.where(or_(
             Student.first_name.like(f"%{search}%"),
             Student.last_name.like(f"%{search}%"),
+            func.concat(Student.first_name, ' ', Student.last_name).like(f"%{search}%"),
             Student.student_roll_id.like(f"%{search}%"),
             Student.phone.like(f"%{search}%"),
             SchoolStreamClass.class_code.like(f"%{search}%"),
@@ -451,6 +452,7 @@ async def dropdown_students(
         stmt = stmt.where(or_(
             Student.first_name.like(f"%{search}%"),
             Student.last_name.like(f"%{search}%"),
+            func.concat(Student.first_name, ' ', Student.last_name).like(f"%{search}%"),
             Student.student_roll_id.like(f"%{search}%"),
         ))
 

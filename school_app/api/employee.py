@@ -47,7 +47,8 @@ async def create_role(payload: RoleCreate, db: AsyncSession = Depends(get_db)):
     await db.commit()
     await db.refresh(obj)
 
-    await cache.delete("roles:all")
+    await cache.delete_pattern("roles:list:*")
+    await cache.delete_pattern("roles:dropdown:*")
     return Result(code=201, message="Role created successfully.", extra={
         "role_id": obj.role_id, "role_name": obj.role_name
     }).http_response()
@@ -129,7 +130,8 @@ async def update_role(role_id: int, payload: RoleUpdate, db: AsyncSession = Depe
     await db.commit()
     await db.refresh(obj)
 
-    await cache.delete("roles:all")
+    await cache.delete_pattern("roles:list:*")
+    await cache.delete_pattern("roles:dropdown:*")
     return Result(code=200, message="Role updated successfully.", extra={
         "role_id": obj.role_id, "role_name": obj.role_name
     }).http_response()
@@ -274,6 +276,7 @@ async def list_employees(
         stmt = stmt.where(or_(
             Employee.first_name.like(f"%{search}%"),
             Employee.last_name.like(f"%{search}%"),
+            func.concat(Employee.first_name, ' ', Employee.last_name).like(f"%{search}%"),
             Employee.mobile.like(f"%{search}%"),
             Employee.email.like(f"%{search}%"),
         ))

@@ -23,7 +23,7 @@ from security.valid_session import valid_session
 
 android_student_router = APIRouter(tags=["ANDROID APIS STUDENT"])
 
-DAY_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+DAY_ORDER = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
 # ── Shared helper ──────────────────────────────────────────────────────────────
@@ -96,6 +96,23 @@ def _timetable_row(tt, subject_name, first_name, last_name, include_status: bool
 # ── Timetable query ────────────────────────────────────────────────────────────
 
 async def _query_timetable(db: AsyncSession, class_id: int, section_id: int, day: Optional[str] = None):
+    # Subquery to get one emp mapping per timetable slot (avoids duplicate rows)
+    from sqlalchemy import literal_column
+    emp_subq = (
+        select(
+            EmployeeClassMapping.class_id,
+            EmployeeClassMapping.section_id,
+            EmployeeClassMapping.subject_id,
+            func.min(EmployeeClassMapping.emp_id).label("emp_id"),
+        )
+        .group_by(
+            EmployeeClassMapping.class_id,
+            EmployeeClassMapping.section_id,
+            EmployeeClassMapping.subject_id,
+        )
+        .subquery()
+    )
+
     stmt = (
         select(
             TimeTable,
@@ -105,14 +122,14 @@ async def _query_timetable(db: AsyncSession, class_id: int, section_id: int, day
         )
         .outerjoin(SchoolStreamSubject, SchoolStreamSubject.subject_id == TimeTable.subject_id)
         .outerjoin(
-            EmployeeClassMapping,
+            emp_subq,
             and_(
-                EmployeeClassMapping.class_id   == TimeTable.class_id,
-                EmployeeClassMapping.section_id == TimeTable.section_id,
-                EmployeeClassMapping.subject_id == TimeTable.subject_id,
+                emp_subq.c.class_id   == TimeTable.class_id,
+                emp_subq.c.section_id == TimeTable.section_id,
+                emp_subq.c.subject_id == TimeTable.subject_id,
             ),
         )
-        .outerjoin(Employee, Employee.id == EmployeeClassMapping.emp_id)
+        .outerjoin(Employee, Employee.emp_id == emp_subq.c.emp_id)
         .where(
             TimeTable.class_id   == class_id,
             TimeTable.section_id == section_id,
@@ -140,7 +157,7 @@ async def student_dashboard(
     if not mapping:
         return Result(code=404, message="No active class mapping found.").http_response()
 
-    today_name = datetime.now().strftime("%A")
+    today_name = datetime.now().strftime("%a")  # "Mon", "Tue" etc — matches DB format
     today_date = date.today()
 
     # ── Timetable today ──
@@ -210,8 +227,8 @@ async def student_dashboard(
         extra={
             "student": {
                 "name":         f"{student.first_name or ''} {student.last_name or ''}".strip(),
-                "class_name":   class_obj.class_name if class_obj else None,
-                "section_name": section_obj.section_name if section_obj else None,
+                "class_name":   class_obj.class_code if class_obj else None,
+                "section_name": section_obj.section_code if section_obj else None,
                 "roll_number":  student.student_roll_id,
             },
             "classes_today":  classes_today,
@@ -302,7 +319,7 @@ async def student_timetable(
     for tt, subj, fn, ln in rows:
         d = tt.day or "Unknown"
         grouped.setdefault(d, []).append(
-            _timetable_row(tt, subj, fn, ln, include_status=(d == datetime.now().strftime("%A")))
+            _timetable_row(tt, subj, fn, ln, include_status=(d == datetime.now().strftime("%a")))
         )
 
     # Sort days in week order

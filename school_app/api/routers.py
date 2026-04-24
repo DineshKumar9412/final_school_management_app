@@ -49,8 +49,8 @@ ROUTERS = [
     (student_diary_router,          "/api/student_diary"),
     (transport_router,              "/api/transport"),
     (emp_leave_router,              "/api/emp_leave"),
+    (gallery_banner_router,         "/api"),
     (custom_alarm_router,           "/api/custom_alarm"),
     (android_student_router,        "/api/android/student"),
-    (android_teacher_router,        "/api/android/teacher"),
-    (gallery_banner_router,         "/api"),
+    (android_teacher_router,        "/api/android/teacher")
 ]

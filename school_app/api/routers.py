@@ -24,6 +24,7 @@ from api.custom_alarm import custom_alarm_router
 from api.dashboard import dashboard_router
 from api.android_student import android_student_router
 from api.android_teacher import android_teacher_router
+from api.gallery_banner import gallery_banner_router
 
 ROUTERS = [
     (auth_router,                  "/api/auth"),
@@ -51,4 +52,5 @@ ROUTERS = [
     (custom_alarm_router,           "/api/custom_alarm"),
     (android_student_router,        "/api/android/student"),
     (android_teacher_router,        "/api/android/teacher"),
+    (gallery_banner_router,         "/api"),
 ]

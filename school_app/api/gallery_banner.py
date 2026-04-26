@@ -17,7 +17,10 @@ gallery_banner_router = APIRouter(tags=["GALLERY & BANNER"])
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/var/www/html/images")
 BASE_URL   = os.getenv("BASE_URL",   "http://69.62.77.182/images")
 
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+try:
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+except Exception:
+    pass
 
 
 # ── Image upload helper ────────────────────────────────────────────────────────
@@ -104,7 +107,7 @@ async def get_gallery(
 
     offset = (page - 1) * page_size
     result = await db.execute(
-        stmt.order_by(SchoolGallery.created_at.desc()).offset(offset).limit(page_size)
+        stmt.order_by(SchoolGallery.id.desc()).offset(offset).limit(page_size)
     )
     items = [
         {
@@ -112,7 +115,7 @@ async def get_gallery(
             "school_id":  g.school_id,
             "image_url":  g.bannerlink,
             "status":     g.status,
-            "created_at": g.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "created_at": g.created_at.strftime("%Y-%m-%d %H:%M:%S") if g.created_at else None,
         }
         for g in result.scalars().all()
     ]
@@ -144,7 +147,7 @@ async def get_gallery_item(
             "school_id":  g.school_id,
             "image_url":  g.bannerlink,
             "status":     g.status,
-            "created_at": g.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "created_at": g.created_at.strftime("%Y-%m-%d %H:%M:%S") if g.created_at else None,
         },
     ).http_response()
 
@@ -266,7 +269,7 @@ async def get_banners(
 
     offset = (page - 1) * page_size
     result = await db.execute(
-        stmt.order_by(SchoolBanner.created_at.desc()).offset(offset).limit(page_size)
+        stmt.order_by(SchoolBanner.id.desc()).offset(offset).limit(page_size)
     )
     items = [
         {
@@ -274,7 +277,7 @@ async def get_banners(
             "school_id":  b.school_id,
             "image_url":  b.bannerlink,
             "status":     b.status,
-            "created_at": b.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "created_at": b.created_at.strftime("%Y-%m-%d %H:%M:%S") if b.created_at else None,
         }
         for b in result.scalars().all()
     ]
@@ -306,7 +309,7 @@ async def get_banner(
             "school_id":  b.school_id,
             "image_url":  b.bannerlink,
             "status":     b.status,
-            "created_at": b.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "created_at": b.created_at.strftime("%Y-%m-%d %H:%M:%S") if b.created_at else None,
         },
     ).http_response()
 

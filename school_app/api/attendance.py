@@ -226,6 +226,7 @@ async def delete_employee_attendance(att_id: int, db: AsyncSession = Depends(get
     await db.delete(obj)
     await db.commit()
 
+    await cache.delete(f"emp_attendance:{att_id}")
     await cache.delete_pattern("emp_attendance:list:*")
     return Result(code=200, message="Employee attendance deleted successfully.", extra={"att_id": att_id}).http_response()
 
@@ -411,6 +412,7 @@ async def delete_student_attendance(att_id: int, db: AsyncSession = Depends(get_
     await db.delete(obj)
     await db.commit()
 
+    await cache.delete(f"student_attendance:{att_id}")
     await cache.delete_pattern("student_attendance:list:*")
     return Result(code=200, message="Student attendance deleted successfully.", extra={"att_id": att_id}).http_response()
 

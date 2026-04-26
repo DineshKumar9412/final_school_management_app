@@ -47,6 +47,7 @@ async def create_role(payload: RoleCreate, db: AsyncSession = Depends(get_db)):
     await db.commit()
     await db.refresh(obj)
 
+    await cache.delete(f"role:{role_id}")
     await cache.delete_pattern("roles:list:*")
     await cache.delete_pattern("roles:dropdown:*")
     return Result(code=201, message="Role created successfully.", extra={
@@ -212,7 +213,7 @@ async def get_employee(emp_db_id: int, db: AsyncSession = Depends(get_db)):
     key = f"employee:{emp_db_id}"
     cached = await cache.get(key)
     if cached:
-        return Result(code=200, message="Employee fetched successfully.", extra=cached).http_response()
+        return Result(code=200, message="Employee fetched successfully (cache).", extra=cached).http_response()
 
     stmt = (
         select(Employee, Role.role_name)
@@ -249,7 +250,7 @@ async def list_employees(
     key = f"employee:list:{page}:{limit}:{search}:{role_id}:{school_group_id}"
     cached = await cache.get(key)
     if cached:
-        return Result(code=200, message="Employees fetched successfully.", extra=cached).http_response()
+        return Result(code=200, message="Employees fetched successfully (cache).", extra=cached).http_response()
 
     offset = (page - 1) * limit
     stmt = (
@@ -306,7 +307,7 @@ async def dropdown_employees(
     key = f"employee:dropdown:{role_id}:{search}"
     cached = await cache.get(key)
     if cached:
-        return Result(code=200, message="Dropdown fetched.", extra=cached).http_response()
+        return Result(code=200, message="Dropdown fetched (cache).", extra=cached).http_response()
 
     stmt = select(Employee.id, Employee.emp_id, Employee.first_name, Employee.last_name).where(Employee.is_active == True)
     if role_id:
@@ -532,7 +533,7 @@ async def list_mappings(
     key = f"emp_mapping:list:{page}:{limit}:{emp_id}:{class_id}:{subject_id}"
     cached = await cache.get(key)
     if cached:
-        return Result(code=200, message="Mappings fetched successfully.", extra=cached).http_response()
+        return Result(code=200, message="Mappings fetched successfully (cache).", extra=cached).http_response()
 
     offset = (page - 1) * limit
     stmt = (

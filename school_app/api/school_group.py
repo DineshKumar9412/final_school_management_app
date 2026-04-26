@@ -144,6 +144,7 @@ async def update_school_group(group_id: int, payload: SchoolGroupUpdateRequest, 
 
     await cache.set(_group_key(group_id), data, expire=CACHE_TTL)
     await cache.delete_pattern("school_groups:*")
+    await cache.delete_pattern("dropdown:school_groups:*")
     return Result(code=200, message="School group updated successfully.", extra=data).http_response()
 
 

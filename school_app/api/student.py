@@ -6,7 +6,7 @@ from sqlalchemy import select, func, or_, and_, update
 from database.session import get_db
 from database.redis_cache import cache
 from models.student_models import StudentAdmissionInquiry, Student, StudentClassMapping, ClassPromotionMap
-from models.school_stream_models import SchoolStreamClass, SchoolStreamClassSection, SchoolGroup
+from models.school_stream_models import SchoolStreamClass, SchoolStreamClassSection, SchoolGroup, SchoolStream
 from schemas.student_schemas import (
     StudentInquiryCreate,
     StudentInquiryUpdate,
@@ -243,6 +243,7 @@ def _student_joined_stmt():
             SchoolStreamClassSection.section_code,
             SchoolStreamClassSection.section_name,
             SchoolGroup.group_name,
+            SchoolStream.stream_name,
         )
         .outerjoin(StudentClassMapping, and_(
             StudentClassMapping.student_id == Student.student_id,
@@ -252,10 +253,11 @@ def _student_joined_stmt():
         .outerjoin(SchoolStreamClass, StudentClassMapping.class_id == SchoolStreamClass.class_id)
         .outerjoin(SchoolStreamClassSection, StudentClassMapping.section_id == SchoolStreamClassSection.section_id)
         .outerjoin(SchoolGroup, SchoolStreamClass.school_group_id == SchoolGroup.school_group_id)
+        .outerjoin(SchoolStream, StudentClassMapping.school_stream_id == SchoolStream.school_stream_id)
     )
 
 
-def _student_row_to_dict(s, m, class_code, school_group_id, section_code, section_name, group_name) -> dict:
+def _student_row_to_dict(s, m, class_code, school_group_id, section_code, section_name, group_name, stream_name) -> dict:
     return {
         "student_id":      s.student_id,
         "school_id":       s.school_id,
@@ -273,6 +275,8 @@ def _student_row_to_dict(s, m, class_code, school_group_id, section_code, sectio
         "class_code":      class_code,
         "school_group_id": school_group_id,
         "group_name":      group_name,
+        "stream_id":       m.school_stream_id if m else None,
+        "stream_name":     stream_name,
         "section_id":      m.section_id if m else None,
         "section_code":    section_code,
         "section_name":    section_name,
@@ -339,8 +343,8 @@ async def get_student(student_id: int, db: AsyncSession = Depends(get_db)):
     if row is None:
         return Result(code=404, message="Student not found.", extra={}).http_response()
 
-    s, m, class_code, school_group_id, section_code, section_name, group_name = row
-    data = _student_row_to_dict(s, m, class_code, school_group_id, section_code, section_name, group_name)
+    s, m, class_code, school_group_id, section_code, section_name, group_name, stream_name = row
+    data = _student_row_to_dict(s, m, class_code, school_group_id, section_code, section_name, group_name, stream_name)
     data.update({
         "address_line1":       s.address_line1,
         "address_line2":       s.address_line2,
@@ -409,7 +413,7 @@ async def list_students(
 
     data = {
         "total": total, "page": page, "limit": limit,
-        "data": [_student_row_to_dict(s, m, cc, sgid, sc, sn, gn) for s, m, cc, sgid, sc, sn, gn in rows.all()],
+        "data": [_student_row_to_dict(s, m, cc, sgid, sc, sn, gn, strn) for s, m, cc, sgid, sc, sn, gn, strn in rows.all()],
     }
     if total > 0:
         await cache.set(key, data, expire=CACHE_TTL)

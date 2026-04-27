@@ -1,6 +1,7 @@
 # api/custom_alarm.py
+import json
 from datetime import date
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select, update
@@ -8,10 +9,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.session import get_db
 from models.auth_models import FcmToken, Session
+from models.config_models import AppConfig
 from models.custom_alarm_models import CustomAlarm
+from models.school_stream_models import SchoolStreamClass, SchoolStreamClassSection
 from response.result import Result
 from schemas.custom_alarm_schemas import CustomAlarmCreate, CustomAlarmUpdate
 from security.valid_session import valid_session
+
+
+def _parse_config_value(key_type: str, raw: Optional[str]) -> Any:
+    """Parse a raw TEXT value from app_config based on its key_type."""
+    if raw is None:
+        return None
+    try:
+        if key_type in ("list", "dict"):
+            return json.loads(raw)
+        if key_type == "set":
+            return list(json.loads(raw))
+        if key_type == "bool":
+            return raw.strip().lower() in ("true", "1", "yes")
+        return raw  # string
+    except Exception:
+        return raw
 
 custom_alarm_router = APIRouter(tags=["ANDROID APIS ALARM"])
 
@@ -145,6 +164,56 @@ async def delete_alarm(
     await db.commit()
 
     return Result(code=200, message="Alarm deleted.").http_response()
+
+
+# ── GET /dropdown ─────────────────────────────────────────────────────────────
+
+@custom_alarm_router.get("/dropdown")
+async def alarm_dropdown(
+    db:      AsyncSession = Depends(get_db),
+    session: Session      = Depends(valid_session),
+):
+    """
+    Returns everything the Create-Alarm form needs:
+      - slots   → from app_config where key_name = 'alarm_slots'  (list)
+      - section → flat list of all active section IDs
+      - classes → { class_id: [section_name, ...] }
+    """
+    # ── Slot times from config table ──
+    config_result = await db.execute(
+        select(AppConfig).where(AppConfig.key_name == "alarm_slots")
+    )
+    cfg = config_result.scalar_one_or_none()
+    slots = _parse_config_value(cfg.key_type, cfg.value) if cfg else []
+
+    # ── Class / section data ──
+    rows_result = await db.execute(
+        select(
+            SchoolStreamClass.class_id,
+            SchoolStreamClassSection.section_id,
+            SchoolStreamClassSection.section_name,
+        )
+        .join(SchoolStreamClassSection, SchoolStreamClassSection.class_id == SchoolStreamClass.class_id)
+        .where(SchoolStreamClass.status == "active")
+        .order_by(SchoolStreamClass.class_id, SchoolStreamClassSection.section_id)
+    )
+    rows = rows_result.all()
+
+    section_ids = sorted({r.section_id for r in rows if r.section_id})
+    classes: dict = {}
+    for r in rows:
+        if r.class_id and r.section_name:
+            classes.setdefault(str(r.class_id), []).append(r.section_name)
+
+    return Result(
+        code=200,
+        message="Dropdown data fetched.",
+        extra={
+            "slots":   slots,
+            "section": section_ids,
+            "classes": classes,
+        },
+    ).http_response()
 
 
 # ── POST stop-alarm ────────────────────────────────────────────────────────────

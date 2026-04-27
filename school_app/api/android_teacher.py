@@ -36,7 +36,7 @@ from security.valid_session import valid_session
 
 android_teacher_router = APIRouter(tags=["ANDROID APIS TEACHER"])
 
-DAY_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+DAY_ORDER = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────────
@@ -52,9 +52,13 @@ async def _get_teacher_context(session: Session, db: AsyncSession):
         select(Employee).where(Employee.id == teacher_id)
     )
     employee = emp_result.scalar_one_or_none()
+    if not employee:
+        return None, []
 
+    # EmployeeClassMapping.emp_id stores employee.emp_id (the staff ID string),
+    # NOT employee.id (the DB primary key). Use employee.emp_id here.
     mappings_result = await db.execute(
-        select(EmployeeClassMapping).where(EmployeeClassMapping.emp_id == teacher_id)
+        select(EmployeeClassMapping).where(EmployeeClassMapping.emp_id == employee.emp_id)
     )
     mappings = mappings_result.scalars().all()
 
@@ -98,7 +102,11 @@ def _slot_status(start_time, end_time) -> str:
 
 # ── Timetable query for teacher ────────────────────────────────────────────────
 
-async def _query_teacher_timetable(db: AsyncSession, teacher_id: int, day: Optional[str] = None):
+async def _query_teacher_timetable(db: AsyncSession, emp_id, day: Optional[str] = None):
+    """
+    emp_id: employee.emp_id (staff number string e.g. "2026003"), NOT employee.id.
+    day:    3-letter abbreviation matching DB column ("Mon", "Tue", …).
+    """
     stmt = (
         select(
             TimeTable,
@@ -112,7 +120,7 @@ async def _query_teacher_timetable(db: AsyncSession, teacher_id: int, day: Optio
                 EmployeeClassMapping.class_id   == TimeTable.class_id,
                 EmployeeClassMapping.section_id == TimeTable.section_id,
                 EmployeeClassMapping.subject_id == TimeTable.subject_id,
-                EmployeeClassMapping.emp_id     == teacher_id,
+                EmployeeClassMapping.emp_id     == emp_id,
             ),
         )
         .outerjoin(SchoolStreamSubject, SchoolStreamSubject.subject_id == TimeTable.subject_id)
@@ -155,8 +163,7 @@ async def teacher_dashboard(
     if not employee:
         return Result(code=404, message="Teacher not found.").http_response()
 
-    teacher_id = int(session.user_id)
-    today_name = datetime.now().strftime("%A")
+    today_abbr = datetime.now().strftime("%a")   # "Mon", "Tue", … — matches DB day column
     today_date = date.today()
 
     # ── Total students in teacher's classes ──
@@ -170,7 +177,7 @@ async def teacher_dashboard(
         total_students = count_result.scalar_one() or 0
 
     # ── Timetable today ──
-    tt_rows = await _query_teacher_timetable(db, teacher_id, day=today_name)
+    tt_rows = await _query_teacher_timetable(db, employee.emp_id, day=today_abbr)
     timetable_today = [
         _tt_row(tt, subj, cls, sec, include_status=True)
         for tt, subj, cls, sec in tt_rows
@@ -270,18 +277,18 @@ async def teacher_timetable(
     db: AsyncSession = Depends(get_db),
     session: Session = Depends(valid_session),
 ):
-    if not session.user_id:
-        return Result(code=401, message="Session missing user info.").http_response()
+    employee, _ = await _get_teacher_context(session, db)
+    if not employee:
+        return Result(code=404, message="Teacher not found.").http_response()
 
-    teacher_id = int(session.user_id)
-    rows = await _query_teacher_timetable(db, teacher_id, day=day)
+    rows = await _query_teacher_timetable(db, employee.emp_id, day=day)
 
     grouped: dict = {}
-    today_name = datetime.now().strftime("%A")
+    today_abbr = datetime.now().strftime("%a")   # "Mon", "Tue", … — matches DB
     for tt, subj, cls, sec in rows:
         d = tt.day or "Unknown"
         grouped.setdefault(d, []).append(
-            _tt_row(tt, subj, cls, sec, include_status=(d == today_name))
+            _tt_row(tt, subj, cls, sec, include_status=(d == today_abbr))
         )
 
     sorted_timetable = {d: grouped[d] for d in DAY_ORDER if d in grouped}

@@ -31,6 +31,34 @@ def _alarm_to_dict(alarm: CustomAlarm) -> dict:
     }
 
 
+# ── GET /dropdown ─────────────────────────────────────────────────────────────
+# IMPORTANT: must be registered before GET /{alarm_id} to avoid route conflict
+
+@custom_alarm_router.get("/dropdown")
+async def alarm_dropdown(
+    db:      AsyncSession = Depends(get_db),
+    session: Session      = Depends(valid_session),
+):
+    """Returns alarm slot times from app_config (key_name = 'alarm_slots')."""
+    result = await db.execute(
+        select(AppConfig).where(AppConfig.key_name == "alarm_slots")
+    )
+    cfg = result.scalar_one_or_none()
+
+    slots = []
+    if cfg and cfg.value:
+        try:
+            slots = json.loads(cfg.value)
+        except Exception:
+            slots = []
+
+    return Result(
+        code=200,
+        message="Dropdown data fetched.",
+        extra={"slots": slots},
+    ).http_response()
+
+
 # ── GET list ───────────────────────────────────────────────────────────────────
 
 @custom_alarm_router.get("/")
@@ -147,33 +175,6 @@ async def delete_alarm(
     await db.commit()
 
     return Result(code=200, message="Alarm deleted.").http_response()
-
-
-# ── GET /dropdown ─────────────────────────────────────────────────────────────
-
-@custom_alarm_router.get("/dropdown")
-async def alarm_dropdown(
-    db:      AsyncSession = Depends(get_db),
-    session: Session      = Depends(valid_session),
-):
-    """Returns alarm slot times from app_config (key_name = 'alarm_slots')."""
-    result = await db.execute(
-        select(AppConfig).where(AppConfig.key_name == "alarm_slots")
-    )
-    cfg = result.scalar_one_or_none()
-
-    slots = []
-    if cfg and cfg.value:
-        try:
-            slots = json.loads(cfg.value)
-        except Exception:
-            slots = []
-
-    return Result(
-        code=200,
-        message="Dropdown data fetched.",
-        extra={"slots": slots},
-    ).http_response()
 
 
 # ── POST stop-alarm ────────────────────────────────────────────────────────────

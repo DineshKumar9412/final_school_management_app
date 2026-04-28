@@ -2,12 +2,13 @@
 from datetime import datetime, date
 from typing import Any, Optional
 
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body, Depends, File, Form, UploadFile
 from sqlalchemy import select, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.session import get_db
 from models.announcement_models import Announcement
+from models.assignment_models import Assignment, AssignmentSubmission
 from models.attendance_models import StudentAttendance
 from models.auth_models import Session
 from models.employee_models import Employee, EmployeeClassMapping
@@ -18,6 +19,7 @@ from models.student_diary_models import StudentDiary
 from models.student_models import Student, StudentClassMapping
 from models.timetable_models import TimeTable
 from models.transport_models import Routes, TransportationStudent, VehicleDetails, VehicleRoutesMap
+from api.gallery_banner import _save_image
 from response.result import Result
 from security.valid_session import valid_session
 
@@ -369,63 +371,194 @@ async def student_academics(
     return Result(code=200, message="Subjects fetched.", extra={"subjects": subjects}).http_response()
 
 
-# ── GET /assignments/ ──────────────────────────────────────────────────────────
+# ── GET /assignments/ ─────────────────────────────────────────────────────────
 
 @android_student_router.get("/assignments/")
 async def student_assignments(
-    type:      str = "assigned",   # "assigned" or "submitted"
+    type:      str = "assigned",   # "assigned" | "submitted"
     page:      int = 1,
     page_size: int = 10,
     db: AsyncSession = Depends(get_db),
     session: Session = Depends(valid_session),
 ):
     """
-    Assignments = StudentDiary entries for this student.
-    type=assigned  → status != 'S' (pending/in-progress)
-    type=submitted → status == 'S'
+    Assigned  → assignments for student's class/section not yet submitted.
+    Submitted → assignments this student has already submitted.
     """
     student, mapping, _, _ = await _get_student_context(session, db)
 
     if not student:
         return Result(code=404, message="Student not found.").http_response()
-
-    base = select(StudentDiary, SchoolStreamSubject.subject_name).outerjoin(
-        SchoolStreamSubject, SchoolStreamSubject.subject_id == StudentDiary.subject_id
-    ).where(StudentDiary.student_id == student.student_id)
+    if not mapping:
+        return Result(code=404, message="No active class mapping.").http_response()
 
     if type == "submitted":
-        base = base.where(StudentDiary.status == "S")
+        # JOIN with submission where status = 'submitted'
+        stmt = (
+            select(Assignment, SchoolStreamSubject.subject_name, AssignmentSubmission)
+            .join(
+                AssignmentSubmission,
+                and_(
+                    AssignmentSubmission.assignment_id == Assignment.id,
+                    AssignmentSubmission.student_id    == student.student_id,
+                    AssignmentSubmission.status        == "submitted",
+                ),
+            )
+            .outerjoin(SchoolStreamSubject, SchoolStreamSubject.subject_id == Assignment.subject_id)
+            .where(
+                Assignment.class_id   == mapping.class_id,
+                Assignment.section_id == mapping.section_id,
+                Assignment.status     == 1,
+            )
+            .order_by(AssignmentSubmission.submitted_at.desc())
+        )
+
+        total_result = await db.execute(select(func.count()).select_from(stmt.subquery()))
+        total = total_result.scalar_one()
+        offset = (page - 1) * page_size
+        rows = (await db.execute(stmt.offset(offset).limit(page_size))).all()
+
+        assignments = [
+            {
+                "id":           a.id,
+                "title":        a.title,
+                "subject":      subj,
+                "due_date":     str(a.due_date) if a.due_date else None,
+                "submitted_at": sub.submitted_at.strftime("%Y-%m-%d %H:%M") if sub.submitted_at else None,
+                "image_url":    sub.image_url,
+                "description":  sub.description,
+            }
+            for a, subj, sub in rows
+        ]
     else:
-        base = base.where(
-            or_(StudentDiary.status != "S", StudentDiary.status.is_(None))
+        # Assigned: exclude assignments student already submitted
+        submitted_subq = (
+            select(AssignmentSubmission.assignment_id)
+            .where(
+                AssignmentSubmission.student_id == student.student_id,
+                AssignmentSubmission.status     == "submitted",
+            )
+            .scalar_subquery()
+        )
+        stmt = (
+            select(Assignment, SchoolStreamSubject.subject_name)
+            .outerjoin(SchoolStreamSubject, SchoolStreamSubject.subject_id == Assignment.subject_id)
+            .where(
+                Assignment.class_id   == mapping.class_id,
+                Assignment.section_id == mapping.section_id,
+                Assignment.status     == 1,
+                Assignment.id.not_in(submitted_subq),
+            )
+            .order_by(Assignment.created_at.desc())
         )
 
-    total_result = await db.execute(
-        select(func.count()).select_from(
-            base.subquery()
-        )
-    )
-    total = total_result.scalar_one()
+        total_result = await db.execute(select(func.count()).select_from(stmt.subquery()))
+        total = total_result.scalar_one()
+        offset = (page - 1) * page_size
+        rows = (await db.execute(stmt.offset(offset).limit(page_size))).all()
 
-    offset = (page - 1) * page_size
-    rows = await db.execute(
-        base.order_by(StudentDiary.dairy_date.desc()).offset(offset).limit(page_size)
-    )
-    assignments = [
-        {
-            "id":         d.id,
-            "task_title": d.task_title,
-            "subject":    subj,
-            "diary_date": str(d.dairy_date) if d.dairy_date else None,
-            "status":     d.status,
-        }
-        for d, subj in rows.all()
-    ]
+        assignments = [
+            {
+                "id":          a.id,
+                "title":       a.title,
+                "subject":     subj,
+                "description": a.description,
+                "due_date":    str(a.due_date) if a.due_date else None,
+                "created_at":  a.created_at.strftime("%Y-%m-%d"),
+            }
+            for a, subj in rows
+        ]
 
     return Result(
         code=200,
         message="Assignments fetched.",
         extra={"type": type, "total": total, "page": page, "page_size": page_size, "assignments": assignments},
+    ).http_response()
+
+
+# ── POST /assignments/{id}/submit/ — student submits an assignment ─────────────
+
+@android_student_router.post("/assignments/{assignment_id}/submit/")
+async def student_submit_assignment(
+    assignment_id: int,
+    description:   Optional[str]         = Form(None),
+    file:          Optional[UploadFile]   = File(None),
+    db: AsyncSession = Depends(get_db),
+    session: Session = Depends(valid_session),
+):
+    """
+    Student submits an assignment.
+    - description (optional text)
+    - file        (optional image upload)
+    Calling again updates the existing submission.
+    """
+    student, mapping, _, _ = await _get_student_context(session, db)
+
+    if not student:
+        return Result(code=404, message="Student not found.").http_response()
+    if not mapping:
+        return Result(code=404, message="No active class mapping.").http_response()
+
+    # Verify the assignment belongs to student's class/section
+    a_result = await db.execute(
+        select(Assignment).where(
+            Assignment.id         == assignment_id,
+            Assignment.class_id   == mapping.class_id,
+            Assignment.section_id == mapping.section_id,
+            Assignment.status     == 1,
+        )
+    )
+    assignment = a_result.scalar_one_or_none()
+    if not assignment:
+        return Result(code=404, message="Assignment not found.").http_response()
+
+    # Save uploaded image if provided
+    image_url = None
+    if file and file.filename:
+        image_url = await _save_image(file)
+
+    # Upsert submission
+    sub_result = await db.execute(
+        select(AssignmentSubmission).where(
+            AssignmentSubmission.assignment_id == assignment_id,
+            AssignmentSubmission.student_id    == student.student_id,
+        )
+    )
+    submission = sub_result.scalar_one_or_none()
+    now = datetime.now()
+
+    if submission:
+        if description is not None:
+            submission.description = description
+        if image_url:
+            submission.image_url = image_url
+        submission.status       = "submitted"
+        submission.submitted_at = now
+    else:
+        submission = AssignmentSubmission(
+            assignment_id = assignment_id,
+            student_id    = student.student_id,
+            description   = description,
+            image_url     = image_url,
+            status        = "submitted",
+            submitted_at  = now,
+        )
+        db.add(submission)
+
+    await db.commit()
+    await db.refresh(submission)
+
+    return Result(
+        code=200,
+        message="Assignment submitted successfully.",
+        extra={
+            "id":           submission.id,
+            "assignment_id": submission.assignment_id,
+            "image_url":    submission.image_url,
+            "description":  submission.description,
+            "status":       "submitted",
+            "submitted_at": submission.submitted_at.strftime("%Y-%m-%d %H:%M:%S"),
+        },
     ).http_response()
 
 

@@ -84,3 +84,22 @@ class MicroScheduleUpdateRequest(BaseModel):
     title:       Optional[str]  = None
     description: Optional[str]  = None
     schedule_dt: Optional[date] = None
+
+class AssignmentCreateRequest(BaseModel):
+    title:       Optional[str]  = None
+    description: Optional[str]  = None
+    class_id:    int
+    section_id:  int
+    subject_id:  Optional[int]  = None
+    group_name:  Optional[str]  = None
+    due_date:    Optional[date] = None
+
+class AssignmentUpdateRequest(BaseModel):
+    title:       Optional[str]  = None
+    description: Optional[str]  = None
+    class_id:    Optional[int]  = None
+    section_id:  Optional[int]  = None
+    subject_id:  Optional[int]  = None
+    group_name:  Optional[str]  = None
+    due_date:    Optional[date] = None
+    status:      Optional[int]  = None

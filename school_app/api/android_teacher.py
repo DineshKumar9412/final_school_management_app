@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database.session import get_db
 from models.announcement_models import Announcement
+from models.assignment_models import Assignment, AssignmentSubmission
 from models.attendance_models import StudentAttendance
 from models.auth_models import Session
 from models.chat_models import ChatMessage
@@ -18,19 +19,18 @@ from models.employee_models import Employee, EmployeeClassMapping
 from models.exam_models import Exam, ExamTimetable, StudentMarks, Grade
 from models.holiday_models import Holiday
 from models.school_stream_models import SchoolStreamClass, SchoolStreamClassSection, SchoolStreamSubject
-from models.student_diary_models import StudentDiary
 from models.student_models import Student, StudentClassMapping
 from models.timetable_models import TimeTable
 from response.result import Result
 from schemas.android_teacher_schemas import (
     AttendanceEntry, BulkAttendanceRequest,
-    DiaryCreateRequest, DiaryUpdateRequest,
     AnnouncementCreateRequest, AnnouncementUpdateRequest,
     DailyTaskCreateRequest,
     MarkEntry, BulkMarksSubmitRequest,
     LeaveApplyRequest,
     SendMessageRequest,
     MicroScheduleCreateRequest, MicroScheduleUpdateRequest,
+    AssignmentCreateRequest, AssignmentUpdateRequest,
 )
 from security.valid_session import valid_session
 
@@ -787,7 +787,7 @@ async def teacher_attendance_summary(
     ).http_response()
 
 
-# ── GET /assignments/ (Teacher views diary entries they created) ───────────────
+# ── GET /assignments/ — list assignments created by this teacher ───────────────
 
 @android_teacher_router.get("/assignments/")
 async def teacher_assignments(
@@ -798,48 +798,57 @@ async def teacher_assignments(
     db: AsyncSession = Depends(get_db),
     session: Session = Depends(valid_session),
 ):
-    """Returns diary/assignment entries created for teacher's classes."""
-    _, mappings = await _get_teacher_context(session, db)
-
-    if not mappings:
-        return Result(code=200, message="No class mapping.", extra={"assignments": [], "total": 0}).http_response()
-
-    pairs = [
-        and_(StudentDiary.class_id == m.class_id, StudentDiary.section_id == m.section_id)
-        for m in mappings
-    ]
-    diary_filter = or_(*pairs)
+    employee, mappings = await _get_teacher_context(session, db)
+    if not employee:
+        return Result(code=404, message="Teacher not found.").http_response()
 
     stmt = (
-        select(StudentDiary, SchoolStreamSubject.subject_name, Student.first_name, Student.last_name)
-        .outerjoin(SchoolStreamSubject, SchoolStreamSubject.subject_id == StudentDiary.subject_id)
-        .outerjoin(Student, Student.student_id == StudentDiary.student_id)
-        .where(diary_filter)
+        select(Assignment, SchoolStreamSubject.subject_name)
+        .outerjoin(SchoolStreamSubject, SchoolStreamSubject.subject_id == Assignment.subject_id)
+        .where(Assignment.emp_id == employee.id)
     )
     if class_id is not None:
-        stmt = stmt.where(StudentDiary.class_id == class_id)
+        stmt = stmt.where(Assignment.class_id == class_id)
     if section_id is not None:
-        stmt = stmt.where(StudentDiary.section_id == section_id)
+        stmt = stmt.where(Assignment.section_id == section_id)
 
     total_result = await db.execute(select(func.count()).select_from(stmt.subquery()))
     total = total_result.scalar_one()
 
     offset = (page - 1) * page_size
-    result = await db.execute(
-        stmt.order_by(StudentDiary.dairy_date.desc()).offset(offset).limit(page_size)
+    rows = await db.execute(
+        stmt.order_by(Assignment.created_at.desc()).offset(offset).limit(page_size)
     )
+    rows = rows.all()
 
-    STATUS_LABEL = {"P": "Pending", "C": "Completed", "S": "Submitted"}
+    # Submission counts per assignment
+    assignment_ids = [a.id for a, _ in rows]
+    sub_counts: dict = {}
+    if assignment_ids:
+        cnt_result = await db.execute(
+            select(AssignmentSubmission.assignment_id, func.count().label("cnt"))
+            .where(
+                AssignmentSubmission.assignment_id.in_(assignment_ids),
+                AssignmentSubmission.status == "submitted",
+            )
+            .group_by(AssignmentSubmission.assignment_id)
+        )
+        sub_counts = {r.assignment_id: r.cnt for r in cnt_result.all()}
+
     assignments = [
         {
-            "id":           d.id,
-            "task_title":   d.task_title,
-            "subject":      subj,
-            "student_name": f"{fn or ''} {ln or ''}".strip() or None,
-            "diary_date":   str(d.dairy_date) if d.dairy_date else None,
-            "status":       STATUS_LABEL.get(d.status, d.status),
+            "id":               a.id,
+            "title":            a.title,
+            "description":      a.description,
+            "subject":          subj,
+            "class_id":         a.class_id,
+            "section_id":       a.section_id,
+            "group_name":       a.group_name,
+            "due_date":         str(a.due_date) if a.due_date else None,
+            "submitted_count":  sub_counts.get(a.id, 0),
+            "created_at":       a.created_at.strftime("%Y-%m-%d"),
         }
-        for d, subj, fn, ln in result.all()
+        for a, subj in rows
     ]
 
     return Result(
@@ -849,20 +858,17 @@ async def teacher_assignments(
     ).http_response()
 
 
-# ── POST /assignments/ (Create diary entry for all students in class/section) ─
+# ── POST /assignments/ — create assignment ────────────────────────────────────
 
 @android_teacher_router.post("/assignments/")
 async def teacher_create_assignment(
-    body: DiaryCreateRequest,
+    body: AssignmentCreateRequest,
     db: AsyncSession = Depends(get_db),
     session: Session = Depends(valid_session),
 ):
-    """
-    Creates a diary/assignment entry for every active student in
-    the given class/section.
-    """
-    _, mappings = await _get_teacher_context(session, db)
-
+    employee, mappings = await _get_teacher_context(session, db)
+    if not employee:
+        return Result(code=404, message="Teacher not found.").http_response()
     if not mappings:
         return Result(code=403, message="No class mapping.").http_response()
 
@@ -870,103 +876,88 @@ async def teacher_create_assignment(
     if not allowed:
         return Result(code=403, message="Access denied for this class/section.").http_response()
 
-    # Fetch students in this class/section
-    students_result = await db.execute(
-        select(StudentClassMapping.student_id)
-        .where(
-            StudentClassMapping.class_id   == body.class_id,
-            StudentClassMapping.section_id == body.section_id,
-            StudentClassMapping.is_active  == True,
-        )
+    assignment = Assignment(
+        title       = body.title,
+        description = body.description,
+        class_id    = body.class_id,
+        section_id  = body.section_id,
+        subject_id  = body.subject_id,
+        group_name  = body.group_name,
+        emp_id      = employee.id,
+        due_date    = body.due_date,
+        status      = 1,
     )
-    student_ids = [row[0] for row in students_result.all()]
-
-    if not student_ids:
-        return Result(code=404, message="No students found in this class/section.").http_response()
-
-    # Combine title + description into task_title if both provided
-    combined = body.task_title or ""
-    if body.description:
-        combined = f"{combined}\n{body.description}".strip() if combined else body.description
-
-    for sid in student_ids:
-        db.add(StudentDiary(
-            student_id = sid,
-            class_id   = body.class_id,
-            section_id = body.section_id,
-            subject_id = body.subject_id,
-            task_title = combined or None,
-            dairy_date = body.diary_date or date.today(),
-            status     = "P",
-        ))
-
+    db.add(assignment)
     await db.commit()
+    await db.refresh(assignment)
 
     return Result(
         code=200,
-        message=f"Assignment created for {len(student_ids)} students.",
-        extra={"count": len(student_ids)},
+        message="Assignment created.",
+        extra={
+            "id":          assignment.id,
+            "title":       assignment.title,
+            "class_id":    assignment.class_id,
+            "section_id":  assignment.section_id,
+            "due_date":    str(assignment.due_date) if assignment.due_date else None,
+            "created_at":  assignment.created_at.strftime("%Y-%m-%d"),
+        },
     ).http_response()
 
 
-# ── PUT /assignments/{id}/ (Edit a single diary entry) ────────────────────────
+# ── PUT /assignments/{id}/ — edit assignment ──────────────────────────────────
 
-@android_teacher_router.put("/assignments/{diary_id}/")
+@android_teacher_router.put("/assignments/{assignment_id}/")
 async def teacher_update_assignment(
-    diary_id: int,
-    body: DiaryUpdateRequest,
+    assignment_id: int,
+    body: AssignmentUpdateRequest,
     db: AsyncSession = Depends(get_db),
     session: Session = Depends(valid_session),
 ):
-    _, mappings = await _get_teacher_context(session, db)
-    if not mappings:
-        return Result(code=403, message="No class mapping.").http_response()
+    employee, _ = await _get_teacher_context(session, db)
+    if not employee:
+        return Result(code=404, message="Teacher not found.").http_response()
 
-    result = await db.execute(select(StudentDiary).where(StudentDiary.id == diary_id))
-    diary = result.scalar_one_or_none()
-    if not diary:
+    result = await db.execute(
+        select(Assignment).where(Assignment.id == assignment_id, Assignment.emp_id == employee.id)
+    )
+    assignment = result.scalar_one_or_none()
+    if not assignment:
         return Result(code=404, message="Assignment not found.").http_response()
 
-    # Verify teacher owns this class/section
-    allowed = any(m.class_id == diary.class_id and m.section_id == diary.section_id for m in mappings)
-    if not allowed:
-        return Result(code=403, message="Access denied.").http_response()
-
-    if body.task_title is not None or body.description is not None:
-        title = body.task_title if body.task_title is not None else diary.task_title
-        desc  = body.description or ""
-        diary.task_title = f"{title}\n{desc}".strip() if desc else title
-    if body.subject_id is not None:
-        diary.subject_id = body.subject_id
-    if body.diary_date is not None:
-        diary.dairy_date = body.diary_date
+    if body.title       is not None: assignment.title       = body.title
+    if body.description is not None: assignment.description = body.description
+    if body.class_id    is not None: assignment.class_id    = body.class_id
+    if body.section_id  is not None: assignment.section_id  = body.section_id
+    if body.subject_id  is not None: assignment.subject_id  = body.subject_id
+    if body.group_name  is not None: assignment.group_name  = body.group_name
+    if body.due_date    is not None: assignment.due_date     = body.due_date
+    if body.status      is not None: assignment.status       = body.status
 
     await db.commit()
     return Result(code=200, message="Assignment updated.").http_response()
 
 
-# ── DELETE /assignments/{id}/ ─────────────────────────────────────────────────
+# ── DELETE /assignments/{id}/ — delete assignment ─────────────────────────────
 
-@android_teacher_router.delete("/assignments/{diary_id}/")
+@android_teacher_router.delete("/assignments/{assignment_id}/")
 async def teacher_delete_assignment(
-    diary_id: int,
+    assignment_id: int,
     db: AsyncSession = Depends(get_db),
     session: Session = Depends(valid_session),
 ):
-    _, mappings = await _get_teacher_context(session, db)
-    if not mappings:
-        return Result(code=403, message="No class mapping.").http_response()
+    employee, _ = await _get_teacher_context(session, db)
+    if not employee:
+        return Result(code=404, message="Teacher not found.").http_response()
 
-    result = await db.execute(select(StudentDiary).where(StudentDiary.id == diary_id))
-    diary = result.scalar_one_or_none()
-    if not diary:
+    result = await db.execute(
+        select(Assignment).where(Assignment.id == assignment_id, Assignment.emp_id == employee.id)
+    )
+    assignment = result.scalar_one_or_none()
+    if not assignment:
         return Result(code=404, message="Assignment not found.").http_response()
 
-    allowed = any(m.class_id == diary.class_id and m.section_id == diary.section_id for m in mappings)
-    if not allowed:
-        return Result(code=403, message="Access denied.").http_response()
-
-    await db.delete(diary)
+    await db.delete(assignment)
     await db.commit()
     return Result(code=200, message="Assignment deleted.").http_response()
 

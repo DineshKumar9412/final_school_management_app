@@ -21,6 +21,7 @@ from models.holiday_models import Holiday
 from models.school_stream_models import SchoolStreamClass, SchoolStreamClassSection, SchoolStreamSubject
 from models.student_models import Student, StudentClassMapping
 from models.timetable_models import TimeTable
+from models.gallery_banner_models import SchoolGallery, SchoolBanner
 from response.result import Result
 from schemas.android_teacher_schemas import (
     AttendanceEntry, BulkAttendanceRequest,
@@ -229,6 +230,48 @@ async def teacher_dashboard(
             for sa, fn, ln, roll in leaves_result.all()
         ]
 
+    # ── Micro schedule (today) ──
+    micro_result = await db.execute(
+        select(MicroSchedule)
+        .where(
+            MicroSchedule.emp_id     == employee.id,
+            MicroSchedule.schedule_dt == today_date,
+        )
+        .order_by(MicroSchedule.id)
+    )
+    micro_schedule = [
+        {
+            "id":          m.id,
+            "title":       m.title,
+            "description": m.description,
+            "date":        str(m.schedule_dt),
+        }
+        for m in micro_result.scalars().all()
+    ]
+
+    # ── Gallery (latest 5 active) ──
+    gallery_result = await db.execute(
+        select(SchoolGallery)
+        .where(SchoolGallery.status == 1)
+        .order_by(SchoolGallery.created_at.desc())
+        .limit(5)
+    )
+    gallery = [
+        {"id": g.id, "image_url": g.bannerlink}
+        for g in gallery_result.scalars().all()
+    ]
+
+    # ── Banners (all active) ──
+    banner_result = await db.execute(
+        select(SchoolBanner)
+        .where(SchoolBanner.status == 1)
+        .order_by(SchoolBanner.created_at.desc())
+    )
+    banners = [
+        {"id": b.id, "image_url": b.bannerlink}
+        for b in banner_result.scalars().all()
+    ]
+
     # ── Upcoming holidays (next 3) ──
     holidays_result = await db.execute(
         select(Holiday)
@@ -264,7 +307,10 @@ async def teacher_dashboard(
                 "absent_students": absent_students[:3],   # preview 3
                 "everyone_present": len(absent_students) == 0,
             },
-            "holidays": holidays,
+            "holidays":       holidays,
+            "micro_schedule": micro_schedule,
+            "gallery":        gallery,
+            "banners":        banners,
         },
     ).http_response()
 
@@ -803,8 +849,11 @@ async def teacher_assignments(
         return Result(code=404, message="Teacher not found.").http_response()
 
     stmt = (
-        select(Assignment, SchoolStreamSubject.subject_name)
+        select(Assignment, SchoolStreamSubject.subject_name,
+               SchoolStreamClass.class_name, SchoolStreamClassSection.section_name)
         .outerjoin(SchoolStreamSubject, SchoolStreamSubject.subject_id == Assignment.subject_id)
+        .outerjoin(SchoolStreamClass, SchoolStreamClass.class_id == Assignment.class_id)
+        .outerjoin(SchoolStreamClassSection, SchoolStreamClassSection.section_id == Assignment.section_id)
         .where(Assignment.emp_id == employee.id)
     )
     if class_id is not None:
@@ -822,7 +871,7 @@ async def teacher_assignments(
     rows = rows.all()
 
     # Submission counts per assignment
-    assignment_ids = [a.id for a, _ in rows]
+    assignment_ids = [a.id for a, *_ in rows]
     sub_counts: dict = {}
     if assignment_ids:
         cnt_result = await db.execute(
@@ -842,13 +891,15 @@ async def teacher_assignments(
             "description":      a.description,
             "subject":          subj,
             "class_id":         a.class_id,
+            "class_name":       cls,
             "section_id":       a.section_id,
+            "section_name":     sec,
             "group_name":       a.group_name,
             "due_date":         str(a.due_date) if a.due_date else None,
             "submitted_count":  sub_counts.get(a.id, 0),
             "created_at":       a.created_at.strftime("%Y-%m-%d"),
         }
-        for a, subj in rows
+        for a, subj, cls, sec in rows
     ]
 
     return Result(

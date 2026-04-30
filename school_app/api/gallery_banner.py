@@ -366,3 +366,15 @@ async def delete_banner(
     await db.commit()
 
     return Result(code=200, message="Banner deleted.").http_response()
+
+
+# ── POST /upload/ (Upload image, return URL only — no DB save) ────────────────
+
+@gallery_banner_router.post("/upload/")
+async def upload_image(file: UploadFile = File(...)):
+    """Upload a single image and return its public URL."""
+    if not file.filename:
+        return Result(code=400, message="No file provided.").http_response()
+
+    url = await _save_image(file)
+    return Result(code=200, message="Image uploaded.", extra={"url": url}).http_response()

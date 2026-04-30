@@ -213,6 +213,7 @@ class SchoolStreamSubject(Base):
     class_id:     Mapped[int]           = mapped_column(BigInteger, ForeignKey("school_stream_class.class_id", ondelete="CASCADE"), nullable=False)
     subject_name: Mapped[str]           = mapped_column(String(200), nullable=False)
     description:  Mapped[Optional[str]] = mapped_column(Text,        nullable=True)
+    image_link:   Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     status:       Mapped[StatusEnum]    = mapped_column(Enum(StatusEnum), default=StatusEnum.active, nullable=False)
     created_at:   Mapped[datetime]      = mapped_column(server_default=func.current_timestamp(), nullable=False)
     updated_at:   Mapped[datetime]      = mapped_column(

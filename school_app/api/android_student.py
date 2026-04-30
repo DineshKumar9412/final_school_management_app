@@ -18,6 +18,8 @@ from models.school_stream_models import SchoolStreamClass, SchoolStreamClassSect
 from models.student_diary_models import StudentDiary
 from models.student_models import Student, StudentClassMapping
 from models.timetable_models import TimeTable
+from models.chapter_models import Chapter
+from models.micro_schedule_models import MicroSchedule
 from models.transport_models import Routes, TransportationStudent, VehicleDetails, VehicleRoutesMap
 from api.gallery_banner import _save_image
 from response.result import Result
@@ -364,11 +366,80 @@ async def student_academics(
         .order_by(SchoolStreamSubject.subject_name)
     )
     subjects = [
-        {"subject_id": s.subject_id, "subject_name": s.subject_name}
+        {"subject_id": s.subject_id, "subject_name": s.subject_name, "image_link": s.image_link}
         for s in result.scalars().all()
     ]
 
     return Result(code=200, message="Subjects fetched.", extra={"subjects": subjects}).http_response()
+
+
+# ── GET /academics/{subject_id}/chapters/ ─────────────────────────────────────
+
+@android_student_router.get("/academics/{subject_id}/chapters/")
+async def student_subject_chapters(
+    subject_id: int,
+    db: AsyncSession = Depends(get_db),
+    session: Session = Depends(valid_session),
+):
+    _, mapping, _, _ = await _get_student_context(session, db)
+
+    if not mapping:
+        return Result(code=404, message="No active class mapping found.").http_response()
+
+    result = await db.execute(
+        select(Chapter)
+        .where(
+            Chapter.subject_id == subject_id,
+            Chapter.class_id   == mapping.class_id,
+        )
+        .order_by(Chapter.order, Chapter.id)
+    )
+    chapters = [
+        {
+            "id":          c.id,
+            "title":       c.title,
+            "description": c.description,
+            "order":       c.order,
+        }
+        for c in result.scalars().all()
+    ]
+
+    return Result(code=200, message="Chapters fetched.", extra={"subject_id": subject_id, "chapters": chapters}).http_response()
+
+
+# ── GET /academics/{subject_id}/micro-schedule/ ───────────────────────────────
+
+@android_student_router.get("/academics/{subject_id}/micro-schedule/")
+async def student_subject_micro_schedule(
+    subject_id: int,
+    db: AsyncSession = Depends(get_db),
+    session: Session = Depends(valid_session),
+):
+    _, mapping, _, _ = await _get_student_context(session, db)
+
+    if not mapping:
+        return Result(code=404, message="No active class mapping found.").http_response()
+
+    result = await db.execute(
+        select(MicroSchedule)
+        .where(
+            MicroSchedule.subject_id  == subject_id,
+            MicroSchedule.class_id    == mapping.class_id,
+            MicroSchedule.section_id  == mapping.section_id,
+        )
+        .order_by(MicroSchedule.schedule_dt)
+    )
+    schedules = [
+        {
+            "id":          m.id,
+            "title":       m.title,
+            "description": m.description,
+            "date":        str(m.schedule_dt),
+        }
+        for m in result.scalars().all()
+    ]
+
+    return Result(code=200, message="Micro schedule fetched.", extra={"subject_id": subject_id, "micro_schedule": schedules}).http_response()
 
 
 # ── GET /assignments/ ─────────────────────────────────────────────────────────

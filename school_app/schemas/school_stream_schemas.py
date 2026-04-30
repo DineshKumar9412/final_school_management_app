@@ -286,6 +286,7 @@ class SchoolStreamSubjectCreate(BaseModel):
     class_id:     int
     subject_name: str
     description:  Optional[str] = None
+    image_link:   Optional[str] = None
     status:       Optional[StatusEnum] = StatusEnum.active
 
     model_config = {
@@ -295,6 +296,7 @@ class SchoolStreamSubjectCreate(BaseModel):
                 "class_id":     1,
                 "subject_name": "Mathematics",
                 "description":  None,
+                "image_link":   None,
                 "status":       "active"
             }
         }
@@ -305,12 +307,14 @@ class SchoolStreamSubjectUpdate(BaseModel):
     class_id:     Optional[int]        = None
     subject_name: Optional[str]        = None
     description:  Optional[str]        = None
+    image_link:   Optional[str]        = None
     status:       Optional[StatusEnum] = None
 
     model_config = {
         "json_schema_extra": {
             "example": {
                 "subject_name": "Physics",
+                "image_link":   "https://example.com/physics.png",
                 "status":       "active"
             }
         }
@@ -322,6 +326,7 @@ class SchoolStreamSubjectResponse(BaseModel):
     school_id:    int
     class_id:     int
     subject_name: str
+    image_link:   Optional[str] = None
     status:       StatusEnum
 
     model_config = {
@@ -332,6 +337,7 @@ class SchoolStreamSubjectResponse(BaseModel):
                 "school_id":    1,
                 "class_id":     1,
                 "subject_name": "Mathematics",
+                "image_link":   "https://example.com/math.png",
                 "status":       "active"
             }
         }

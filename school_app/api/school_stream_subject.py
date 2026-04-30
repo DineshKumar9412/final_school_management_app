@@ -1,16 +1,19 @@
 # api/school_stream_subject.py
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, UploadFile, File, Form
+from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from database.session import get_db
 from database.redis_cache import cache
 from models.school_stream_models import SchoolStream, SchoolStreamClass, SchoolStreamSubject
+from models.school_stream_models import StatusEnum
 from schemas.school_stream_schemas import (
     SchoolStreamSubjectCreate, SchoolStreamSubjectUpdate, SchoolStreamSubjectResponse,
 )
 from security.valid_session import valid_session
 from response.result import Result
+from api.gallery_banner import _save_image
 
 school_stream_subject_router = APIRouter(tags=["SCHOOL STREAM SUBJECT"], dependencies=[Depends(valid_session)])
 
@@ -32,7 +35,7 @@ def _row_to_dict(r) -> dict:
     return {
         "subject_id": r.subject_id, "school_id": r.school_id, "class_id": r.class_id,
         "class_code": r.class_code, "stream_name": r.stream_name,
-        "subject_name": r.subject_name, "status": r.status,
+        "subject_name": r.subject_name, "image_link": r.image_link, "status": r.status,
     }
 
 def _joined_stmt():
@@ -40,7 +43,8 @@ def _joined_stmt():
         select(
             SchoolStreamSubject.subject_id, SchoolStreamSubject.school_id,
             SchoolStreamSubject.class_id, SchoolStreamSubject.subject_name,
-            SchoolStreamSubject.status, SchoolStreamClass.class_code,
+            SchoolStreamSubject.image_link, SchoolStreamSubject.status,
+            SchoolStreamClass.class_code,
             SchoolStreamClass.school_stream_id, SchoolStream.stream_name,
         )
         .join(SchoolStreamClass, SchoolStreamSubject.class_id == SchoolStreamClass.class_id)
@@ -62,17 +66,32 @@ _409 = {"content": {"application/json": {"example": {"code": 409, "message": "Su
         409: _409,
     },
 )
-async def create_subject(payload: SchoolStreamSubjectCreate, db: AsyncSession = Depends(get_db)):
+async def create_subject(
+    school_id:    int                    = Form(...),
+    class_id:     int                    = Form(...),
+    subject_name: str                    = Form(...),
+    description:  Optional[str]          = Form(None),
+    status:       Optional[StatusEnum]   = Form(StatusEnum.active),
+    image:        Optional[UploadFile]   = File(None),
+    db:           AsyncSession           = Depends(get_db),
+):
     exists = await db.execute(
         select(SchoolStreamSubject.subject_id).where(
-            SchoolStreamSubject.class_id == payload.class_id,
-            SchoolStreamSubject.subject_name == payload.subject_name,
+            SchoolStreamSubject.class_id == class_id,
+            SchoolStreamSubject.subject_name == subject_name,
         )
     )
     if exists.scalar_one_or_none():
-        return Result(code=409, message=f"Subject name '{payload.subject_name}' already exists for this class.", extra={}).http_response()
+        return Result(code=409, message=f"Subject name '{subject_name}' already exists for this class.", extra={}).http_response()
 
-    obj = SchoolStreamSubject(**payload.model_dump())
+    image_link = None
+    if image and image.filename:
+        image_link = await _save_image(image)
+
+    obj = SchoolStreamSubject(
+        school_id=school_id, class_id=class_id, subject_name=subject_name,
+        description=description, status=status, image_link=image_link,
+    )
     db.add(obj)
     await db.commit()
 

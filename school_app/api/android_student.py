@@ -867,6 +867,141 @@ async def student_exam_result(
     ).http_response()
 
 
+# ── GET /result/offline/ ── exam-wise marks grouped by exam title ─────────────
+
+@android_student_router.get("/result/offline/")
+async def student_offline_results(
+    db: AsyncSession = Depends(get_db),
+    session: Session = Depends(valid_session),
+):
+    student, mapping, _, _ = await _get_student_context(session, db)
+    if not student:
+        return Result(code=404, message="Student not found.").http_response()
+
+    class_id = mapping.class_id if mapping else None
+
+    # All exams for student's class
+    exams_result = await db.execute(
+        select(Exam).where(Exam.class_id == class_id, Exam.is_active == True)
+        .order_by(Exam.exam_id)
+    )
+    exams = exams_result.scalars().all()
+
+    # All marks for this student
+    marks_result = await db.execute(
+        select(StudentMarks).where(StudentMarks.student_id == student.student_id)
+    )
+    marks_map = {sm.subject_id: sm.mark for sm in marks_result.scalars().all()}
+
+    exam_results = []
+    for exam in exams:
+        # Subjects in this exam's timetable
+        et_result = await db.execute(
+            select(ExamTimetable, SchoolStreamSubject.subject_name)
+            .outerjoin(SchoolStreamSubject, SchoolStreamSubject.subject_id == ExamTimetable.subject_id)
+            .where(ExamTimetable.exam_id == exam.exam_id, ExamTimetable.is_active == True)
+        )
+        et_rows = et_result.all()
+
+        subjects      = []
+        total_marks   = 0.0
+        obtained_marks = 0.0
+
+        for et, subj_name in et_rows:
+            tm = float(et.total_marks) if et.total_marks else 0.0
+            ob = float(marks_map.get(et.subject_id, 0) or 0)
+            total_marks    += tm
+            obtained_marks += ob
+
+            # Grade per subject
+            grade_val = None
+            if tm > 0:
+                pct = (ob / tm) * 100
+                g = await db.execute(
+                    select(Grade.grade).where(
+                        Grade.start_range <= pct,
+                        Grade.end_range   >= pct,
+                        Grade.is_active   == True,
+                    )
+                )
+                grade_val = g.scalar_one_or_none()
+
+            subjects.append({
+                "subject":     subj_name,
+                "total_marks": tm,
+                "obtained":    ob,
+                "pass_mark":   float(et.pass_mark) if et.pass_mark else None,
+                "grade":       grade_val,
+            })
+
+        # Overall grade
+        overall_grade = None
+        if total_marks > 0:
+            pct = (obtained_marks / total_marks) * 100
+            og = await db.execute(
+                select(Grade.grade).where(
+                    Grade.start_range <= pct,
+                    Grade.end_range   >= pct,
+                    Grade.is_active   == True,
+                )
+            )
+            overall_grade = og.scalar_one_or_none()
+
+        exam_results.append({
+            "exam_id":       exam.exam_id,
+            "exam_name":     exam.exam_name,
+            "total_marks":   total_marks,
+            "obtained_marks": obtained_marks,
+            "overall_grade": overall_grade,
+            "subjects":      subjects,
+        })
+
+    return Result(code=200, message="Offline results fetched.", extra={
+        "student_id": student.student_id,
+        "offline_results": exam_results,
+    }).http_response()
+
+
+# ── GET /result/online/ ── online exam list by title ──────────────────────────
+
+@android_student_router.get("/result/online/")
+async def student_online_results(
+    db: AsyncSession = Depends(get_db),
+    session: Session = Depends(valid_session),
+):
+    student, mapping, _, _ = await _get_student_context(session, db)
+    if not student:
+        return Result(code=404, message="Student not found.").http_response()
+
+    class_id = mapping.class_id if mapping else None
+    from models.exam_models import OnlineExam
+    rows = (await db.execute(
+        select(OnlineExam, SchoolStreamSubject.subject_name)
+        .outerjoin(SchoolStreamSubject, SchoolStreamSubject.subject_id == OnlineExam.subject_id)
+        .where(OnlineExam.class_id == class_id)
+        .order_by(OnlineExam.start_date.desc())
+    )).all()
+
+    online_results = [
+        {
+            "id":         row.OnlineExam.id,
+            "title":      row.OnlineExam.title,
+            "subject":    row.subject_name,
+            "exam_code":  row.OnlineExam.exam_code,
+            "url":        row.OnlineExam.url,
+            "duration":   row.OnlineExam.duration,
+            "start_date": str(row.OnlineExam.start_date),
+            "end_date":   str(row.OnlineExam.end_date),
+        }
+        for row in rows
+    ]
+
+    return Result(code=200, message="Online results fetched.", extra={
+        "student_id":     student.student_id,
+        "online_results": online_results,
+    }).http_response()
+
+
 # ── GET /result/ ───────────────────────────────────────────────────────────────
 
 @android_student_router.get("/result/")

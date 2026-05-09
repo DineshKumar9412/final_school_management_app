@@ -27,8 +27,8 @@ class EmpLeaveRequest(Base):
     reason:      Mapped[str]                      = mapped_column(String(1000), nullable=False)
     from_dt:     Mapped[date]                     = mapped_column(Date, nullable=False)
     to_date:     Mapped[date]                     = mapped_column(Date, nullable=False)
-    type:        Mapped[Optional[LeaveTypeEnum]]  = mapped_column(Enum(LeaveTypeEnum), nullable=True)
-    status:      Mapped[Optional[LeaveStatusEnum]]= mapped_column(Enum(LeaveStatusEnum), nullable=True, default=LeaveStatusEnum.pending)
+    type:        Mapped[Optional[LeaveTypeEnum]]   = mapped_column(Enum(LeaveTypeEnum,   values_callable=lambda x: [e.value for e in x]), nullable=True)
+    status:      Mapped[Optional[LeaveStatusEnum]] = mapped_column(Enum(LeaveStatusEnum, values_callable=lambda x: [e.value for e in x]), nullable=True, default=LeaveStatusEnum.pending)
     attachments: Mapped[Optional[bytes]]          = mapped_column(LargeBinary, nullable=True)
     created_at:  Mapped[datetime]                 = mapped_column(server_default=func.current_timestamp(), nullable=False)
     updated_at:  Mapped[datetime]                 = mapped_column(

@@ -2,9 +2,6 @@
 from sqlalchemy import Boolean, Column, DateTime, Integer, String
 from sqlalchemy.sql import func
 from database.base import Base
-from sqlalchemy import Boolean, Column, DateTime, Integer, String
-from sqlalchemy.sql import func
-from database.base import Base
 
 
 class DeviceRegistration(Base):

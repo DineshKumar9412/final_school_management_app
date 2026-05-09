@@ -38,16 +38,22 @@ def send_alarm_notification(device_token: str, message: str, slot_time: str) -> 
 
 def send_push_notification(device_token: str, otp: str) -> bool:
     try:
+        if not device_token or not str(device_token).strip():
+            print("Invalid device token")
+            return False
+
         message = messaging.Message(
             notification=messaging.Notification(
                 title="Login OTP",
                 body=f"Your OTP is {otp}"
             ),
-            token=device_token
+            token=device_token.strip()
         )
+
         response = messaging.send(message)
         print("Successfully sent message:", response)
         return True
+
     except Exception as e:
         print("ERROR:", e)
         return False

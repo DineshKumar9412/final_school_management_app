@@ -1,7 +1,8 @@
 # api/profile.py
 from fastapi import APIRouter, Cookie, Depends, Header, Response
-from sqlalchemy import select
+from sqlalchemy import select, delete, cast, Date
 from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import date
 
 from database.redis_cache import cache
 from database.session import get_db
@@ -64,13 +65,32 @@ async def logout(
     
     key = cookie_key or header_key
 
+    device_id = None
+
     if key:
         await cache.delete(f"session:{key}")
         result = await db.execute(select(Session).where(Session.client_key == key))
         session = result.scalar_one_or_none()
         if session:
+            device_id = session.device_id
             await db.delete(session)
-            await db.commit()
+
+    if device_id is not None:
+        today = date.today()
+        null_sessions = (await db.execute(
+            select(Session).where(
+                Session.device_id == device_id,
+                Session.user_id == None,
+                Session.role == None,
+                cast(Session.created_on, Date) != today,
+            )
+        )).scalars().all()
+
+        for s in null_sessions:
+            await cache.delete(f"session:{s.client_key}")
+            await db.delete(s)
+
+    await db.commit()
     response.delete_cookie(key="client_key")
 
     return Result(code=200, message="Logged out successfully").http_response()

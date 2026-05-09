@@ -1,7 +1,9 @@
 # main.py
 from fastapi import FastAPI, Request
 from sqladmin import Admin
+from admin.db_admin import ALL_VIEWS, authentication_backend
 from database.session import engine
+from starlette.middleware.sessions import SessionMiddleware
 from middleware.cors import setup_cors
 from middleware.decryption import DecryptionMiddleware
 from middleware.encryption import EncryptionMiddleware
@@ -32,7 +34,10 @@ for router, prefix in ROUTERS:
     app.include_router(router, prefix=prefix)
 
 # Middleware Setup
-# 1️⃣ CORS
+# 1️⃣ Session (required for db_admin login)
+app.add_middleware(SessionMiddleware, secret_key="db_admin_secret_key_school_2026")
+
+# 2️⃣ CORS
 setup_cors(app)
 
 # 2️⃣ Decrypt incoming requests (only selected paths)
@@ -64,10 +69,11 @@ app.add_middleware(EncryptionMiddleware)
 #         )
 
 
-###
-# Admin Panel
-# admin = Admin(app, engine)
-# admin.add_view(UserAdmin)
+# DB Admin Panel — http://69.62.77.182:8005/db_admin
+db_admin = Admin(app, engine, base_url="/db_admin", authentication_backend=authentication_backend)
+for view in ALL_VIEWS:
+    db_admin.add_view(view)
+
 
 @app.get("/metrics", include_in_schema=False)
 def metrics():

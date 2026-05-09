@@ -6,7 +6,7 @@ from sqlalchemy import select, func, or_, update, outerjoin
 from database.session import get_db
 from database.redis_cache import cache
 from models.school_stream_models import (
-    SchoolGroup, SchoolStream, SchoolStreamClass, SchoolStreamClassSection, SchoolStreamSubject,
+    SchoolGroup, SchoolStreamClass, SchoolStreamClassSection, SchoolStreamSubject,
 )
 from schemas.school_stream_schemas import (
     SchoolStreamClassCreate, SchoolStreamClassUpdate, SchoolStreamClassResponse,
@@ -34,7 +34,6 @@ def _row_to_dict(r) -> dict:
     return {
         "class_id": r.class_id, "school_id": r.school_id,
         "school_group_id": r.school_group_id, "group_name": r.group_name,
-        "school_stream_id": r.school_stream_id, "stream_name": r.stream_name,
         "class_code": r.class_code, "status": r.status,
     }
 
@@ -42,17 +41,16 @@ def _joined_stmt():
     return (
         select(
             SchoolStreamClass.class_id, SchoolStreamClass.school_id,
-            SchoolStreamClass.school_group_id, SchoolStreamClass.school_stream_id,
+            SchoolStreamClass.school_group_id,
             SchoolStreamClass.class_code, SchoolStreamClass.status,
-            SchoolGroup.group_name, SchoolStream.stream_name,
+            SchoolGroup.group_name,
         )
         .join(SchoolGroup, SchoolStreamClass.school_group_id == SchoolGroup.school_group_id)
-        .outerjoin(SchoolStream, SchoolStreamClass.school_stream_id == SchoolStream.school_stream_id)
     )
 
 _CLASS_RESULT = {
     "class_id": 1, "school_id": 1, "school_group_id": 1, "group_name": "Primary",
-    "school_stream_id": 1, "stream_name": "Science", "class_code": "10", "status": "active"
+    "class_code": "10", "status": "active"
 }
 _404 = {"content": {"application/json": {"example": {"code": 404, "message": "Class not found.", "result": {}}}}}
 _409 = {"content": {"application/json": {"example": {"code": 409, "message": "Class code '10' already exists for this group.", "result": {}}}}}
@@ -211,9 +209,9 @@ async def delete_class(class_id: int, db: AsyncSession = Depends(get_db)):
         }}}},
     },
 )
-async def dropdown_classes(school_stream_id: int | None = Query(None), school_group_id: int | None = Query(None), search: str | None = Query(None), db: AsyncSession = Depends(get_db)):
+async def dropdown_classes(school_group_id: int | None = Query(None), search: str | None = Query(None), db: AsyncSession = Depends(get_db)):
     search = clean_search(search)
-    key = f"dropdown:classes:{school_stream_id}:{school_group_id}:{search}"
+    key = f"dropdown:classes:{school_group_id}:{search}"
     cached = await cache.get(key)
     if cached:
         return Result(code=200, message="Dropdown fetched (cache).", extra=cached).http_response()
@@ -222,13 +220,9 @@ async def dropdown_classes(school_stream_id: int | None = Query(None), school_gr
         select(
             SchoolStreamClass.class_id,
             SchoolStreamClass.class_code,
-            SchoolStream.stream_name,
         )
-        .outerjoin(SchoolStream, SchoolStreamClass.school_stream_id == SchoolStream.school_stream_id)
         .where(SchoolStreamClass.status == "active")
     )
-    if school_stream_id:
-        stmt = stmt.where(SchoolStreamClass.school_stream_id == school_stream_id)
     if school_group_id:
         stmt = stmt.where(SchoolStreamClass.school_group_id == school_group_id)
     if search:
@@ -236,7 +230,7 @@ async def dropdown_classes(school_stream_id: int | None = Query(None), school_gr
 
     rows = await db.execute(stmt.order_by(SchoolStreamClass.class_code))
     data = [
-        {"class_id": r.class_id, "class_code": r.class_code, "stream_name": r.stream_name}
+        {"class_id": r.class_id, "class_code": r.class_code}
         for r in rows.all()
     ]
     if data:

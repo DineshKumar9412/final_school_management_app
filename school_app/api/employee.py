@@ -47,7 +47,6 @@ async def create_role(payload: RoleCreate, db: AsyncSession = Depends(get_db)):
     await db.commit()
     await db.refresh(obj)
 
-    await cache.delete(f"role:{role_id}")
     await cache.delete_pattern("roles:list:*")
     await cache.delete_pattern("roles:dropdown:*")
     return Result(code=201, message="Role created successfully.", extra={

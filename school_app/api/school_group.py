@@ -6,7 +6,7 @@ from sqlalchemy import select, func, update
 from database.session import get_db
 from database.redis_cache import cache
 from models.school_stream_models import (
-    SchoolGroup, SchoolStream, SchoolStreamClass, SchoolStreamClassSection, SchoolStreamSubject,
+    SchoolGroup, SchoolStreamClass, SchoolStreamClassSection, SchoolStreamSubject,
 )
 from schemas.school_stream_schemas import (
     SchoolGroupCreateRequest, SchoolGroupUpdateRequest, SchoolGroupResponse,

@@ -764,18 +764,14 @@ async def student_exams(
         ]
         return Result(code=200, message="Exams fetched.", extra={"type": type, "exams": exams}).http_response()
 
-    # type == "all" → return distinct Exam list from ExamTimetable for this stream
-    stream_id = class_obj.school_stream_id if class_obj else None
-    if not stream_id:
-        return Result(code=200, message="No stream linked to class.", extra={"exams": []}).http_response()
-
+    # type == "all" → return distinct Exam list for this class
     result = await db.execute(
         select(Exam)
         .join(ExamTimetable, ExamTimetable.exam_id == Exam.exam_id)
         .where(
-            ExamTimetable.school_stream_id == stream_id,
-            ExamTimetable.is_active        == True,
-            Exam.is_active                 == True,
+            ExamTimetable.class_id == mapping.class_id,
+            ExamTimetable.is_active == True,
+            Exam.is_active          == True,
         )
         .distinct()
         .order_by(Exam.exam_name)

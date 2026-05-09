@@ -5,12 +5,13 @@ from sqlalchemy import select, func
 
 from database.session import get_db
 from database.redis_cache import cache
-from models.school_stream_models import SchoolStreamClass, SchoolStream
-from models.student_models import Student
+from models.school_stream_models import SchoolStreamClass, StatusEnum
+from models.student_models import Student, StudentClassMapping
 from models.employee_models import Employee
 from models.transport_models import VehicleDetails
 from models.exam_models import Exam
 from models.notification_models import Notification
+from sqlalchemy import and_
 from security.valid_session import valid_session
 from response.result import Result
 from datetime import date
@@ -88,10 +89,9 @@ async def get_dashboard(
     )).scalar_one()
 
     # ── 3. Total Classes ──────────────────────────────────────────────────────
-    total_streams  = (await db.execute(select(func.count()).select_from(SchoolStream))).scalar_one()
     total_classes  = (await db.execute(select(func.count()).select_from(SchoolStreamClass))).scalar_one()
     active_classes = (await db.execute(
-        select(func.count()).select_from(SchoolStreamClass).where(SchoolStreamClass.status == "active")
+        select(func.count()).select_from(SchoolStreamClass).where(SchoolStreamClass.status == StatusEnum.active)
     )).scalar_one()
 
     # ── 4. Buses ──────────────────────────────────────────────────────────────
@@ -132,7 +132,6 @@ async def get_dashboard(
             "total_teachers":  total_teachers,
             "active_teachers": active_teachers,
             "total_classes":   total_classes,
-            "total_streams":   total_streams,
             "active_classes":  active_classes,
             "total_buses":     total_buses,
             "active_buses":    active_buses,
@@ -177,9 +176,6 @@ async def get_today_birthdays(db: AsyncSession = Depends(get_db)):
     cached = await cache.get(key)
     if cached:
         return Result(code=200, message="Birthdays fetched successfully (cache).", extra=cached).http_response()
-
-    from models.student_models import StudentClassMapping
-    from sqlalchemy import and_
 
     rows = (await db.execute(
         select(

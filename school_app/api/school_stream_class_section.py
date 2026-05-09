@@ -5,7 +5,7 @@ from sqlalchemy import select, func, or_
 
 from database.session import get_db
 from database.redis_cache import cache
-from models.school_stream_models import SchoolStream, SchoolStreamClass, SchoolStreamClassSection
+from models.school_stream_models import SchoolStreamClass, SchoolStreamClassSection
 from schemas.school_stream_schemas import (
     SchoolStreamClassSectionCreate, SchoolStreamClassSectionUpdate, SchoolStreamClassSectionResponse,
 )
@@ -30,15 +30,13 @@ def _list_key(page: int, limit: int, search: str | None, class_id: int | None = 
 
 def _row_to_dict(r) -> dict:
     return {
-        "section_id":       r.section_id,
-        "school_id":        r.school_id,
-        "class_id":         r.class_id,
-        "class_code":       r.class_code,
-        "school_stream_id": r.class_school_stream_id,   # ← unique label from class table
-        "stream_name":      r.stream_name,
-        "section_code":     r.section_code,
-        "section_name":     r.section_name,
-        "status":           r.status,
+        "section_id":   r.section_id,
+        "school_id":    r.school_id,
+        "class_id":     r.class_id,
+        "class_code":   r.class_code,
+        "section_code": r.section_code,
+        "section_name": r.section_name,
+        "status":       r.status,
     }
 
 def _joined_stmt():
@@ -47,16 +45,13 @@ def _joined_stmt():
             SchoolStreamClassSection.section_id,
             SchoolStreamClassSection.school_id,
             SchoolStreamClassSection.class_id,
-            SchoolStreamClass.school_stream_id.label("class_school_stream_id"),  # ← unique label
             SchoolStreamClassSection.section_code,
             SchoolStreamClassSection.section_name,
             SchoolStreamClassSection.status,
             SchoolStreamClass.class_code,
-            SchoolStream.stream_name,
         )
         .select_from(SchoolStreamClassSection)
         .join(SchoolStreamClass, SchoolStreamClassSection.class_id == SchoolStreamClass.class_id)
-        .outerjoin(SchoolStream, SchoolStreamClass.school_stream_id == SchoolStream.school_stream_id)
     )
 
 def _count_stmt():
@@ -64,12 +59,10 @@ def _count_stmt():
         select(func.count(SchoolStreamClassSection.section_id))
         .select_from(SchoolStreamClassSection)
         .join(SchoolStreamClass, SchoolStreamClassSection.class_id == SchoolStreamClass.class_id)
-        .outerjoin(SchoolStream, SchoolStreamClass.school_stream_id == SchoolStream.school_stream_id)  # ← join via class
     )
 
 _SECTION_RESULT = {
     "section_id": 1, "school_id": 1, "class_id": 1, "class_code": "10",
-    "school_stream_id": None, "stream_name": None,
     "section_code": "A", "section_name": "Rose", "status": "active"
 }
 _404 = {"content": {"application/json": {"example": {"code": 404, "message": "Section not found.", "result": {}}}}}
@@ -226,13 +219,12 @@ async def delete_section(section_id: int, db: AsyncSession = Depends(get_db)):
     },
 )
 async def dropdown_sections(
-    class_id:         int | None = Query(None),
-    school_stream_id: int | None = Query(None),
-    search:           str | None = Query(None),
+    class_id: int | None = Query(None),
+    search:   str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     search = clean_search(search)
-    key = f"dropdown:sections:{class_id}:{school_stream_id}:{search}"
+    key = f"dropdown:sections:{class_id}:{search}"
     cached = await cache.get(key)
     if cached:
         return Result(code=200, message="Dropdown fetched (cache).", extra=cached).http_response()
@@ -242,16 +234,11 @@ async def dropdown_sections(
             SchoolStreamClassSection.section_id,
             SchoolStreamClassSection.section_name,
             SchoolStreamClassSection.section_code,
-            SchoolStream.stream_name,
         )
-        .join(SchoolStreamClass, SchoolStreamClassSection.class_id == SchoolStreamClass.class_id)
-        .outerjoin(SchoolStream, SchoolStreamClass.school_stream_id == SchoolStream.school_stream_id)
         .where(SchoolStreamClassSection.status == "active")
     )
     if class_id:
         stmt = stmt.where(SchoolStreamClassSection.class_id == class_id)
-    if school_stream_id:
-        stmt = stmt.where(SchoolStreamClass.school_stream_id == school_stream_id)
     if search:
         stmt = stmt.where(SchoolStreamClassSection.section_name.like(f"%{search}%"))
     stmt = stmt.order_by(SchoolStreamClassSection.section_name)
@@ -262,7 +249,6 @@ async def dropdown_sections(
             "section_id":   r.section_id,
             "section_name": r.section_name,
             "section_code": r.section_code,
-            "stream_name":  r.stream_name,
         }
         for r in rows.all()
     ]

@@ -6,7 +6,7 @@ from sqlalchemy import select, func
 
 from database.session import get_db
 from database.redis_cache import cache
-from models.school_stream_models import SchoolStream, SchoolStreamClass, SchoolStreamSubject
+from models.school_stream_models import SchoolStreamClass, SchoolStreamSubject
 from models.school_stream_models import StatusEnum
 from schemas.school_stream_schemas import (
     SchoolStreamSubjectCreate, SchoolStreamSubjectUpdate, SchoolStreamSubjectResponse,
@@ -34,7 +34,7 @@ def _list_key(page: int, limit: int, search: str | None, class_id: int | None = 
 def _row_to_dict(r) -> dict:
     return {
         "subject_id": r.subject_id, "school_id": r.school_id, "class_id": r.class_id,
-        "class_code": r.class_code, "stream_name": r.stream_name,
+        "class_code": r.class_code,
         "subject_name": r.subject_name, "image_link": r.image_link, "status": r.status,
     }
 
@@ -45,15 +45,13 @@ def _joined_stmt():
             SchoolStreamSubject.class_id, SchoolStreamSubject.subject_name,
             SchoolStreamSubject.image_link, SchoolStreamSubject.status,
             SchoolStreamClass.class_code,
-            SchoolStreamClass.school_stream_id, SchoolStream.stream_name,
         )
         .join(SchoolStreamClass, SchoolStreamSubject.class_id == SchoolStreamClass.class_id)
-        .outerjoin(SchoolStream, SchoolStreamClass.school_stream_id == SchoolStream.school_stream_id)
     )
 
 _SUBJECT_RESULT = {
     "subject_id": 1, "school_id": 1, "class_id": 1,
-    "class_code": "10", "stream_name": "Science",
+    "class_code": "10",
     "subject_name": "Mathematics", "status": "active"
 }
 _404 = {"content": {"application/json": {"example": {"code": 404, "message": "Subject not found.", "result": {}}}}}

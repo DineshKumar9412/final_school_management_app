@@ -1,12 +1,12 @@
 # api/student.py
-from fastapi import APIRouter, Depends, Query, UploadFile, File,Body
+from fastapi import APIRouter, Depends, Query, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, and_, update
 
 from database.session import get_db
 from database.redis_cache import cache
-from models.student_models import StudentAdmissionInquiry, Student, StudentClassMapping, ClassPromotionMap
-from models.school_stream_models import SchoolStreamClass, SchoolStreamClassSection, SchoolGroup, SchoolStream
+from models.student_models import StudentAdmissionInquiry, Student, StudentClassMapping
+from models.school_stream_models import SchoolStreamClass, SchoolStreamClassSection, SchoolGroup
 from schemas.student_schemas import (
     StudentInquiryCreate,
     StudentInquiryUpdate,
@@ -243,7 +243,6 @@ def _student_joined_stmt():
             SchoolStreamClassSection.section_code,
             SchoolStreamClassSection.section_name,
             SchoolGroup.group_name,
-            SchoolStream.stream_name,
         )
         .outerjoin(StudentClassMapping, and_(
             StudentClassMapping.student_id == Student.student_id,
@@ -253,11 +252,10 @@ def _student_joined_stmt():
         .outerjoin(SchoolStreamClass, StudentClassMapping.class_id == SchoolStreamClass.class_id)
         .outerjoin(SchoolStreamClassSection, StudentClassMapping.section_id == SchoolStreamClassSection.section_id)
         .outerjoin(SchoolGroup, SchoolStreamClass.school_group_id == SchoolGroup.school_group_id)
-        .outerjoin(SchoolStream, StudentClassMapping.school_stream_id == SchoolStream.school_stream_id)
     )
 
 
-def _student_row_to_dict(s, m, class_code, school_group_id, section_code, section_name, group_name, stream_name) -> dict:
+def _student_row_to_dict(s, m, class_code, school_group_id, section_code, section_name, group_name) -> dict:
     return {
         "student_id":      s.student_id,
         "school_id":       s.school_id,
@@ -275,8 +273,6 @@ def _student_row_to_dict(s, m, class_code, school_group_id, section_code, sectio
         "class_code":      class_code,
         "school_group_id": school_group_id,
         "group_name":      group_name,
-        "stream_id":       m.school_stream_id if m else None,
-        "stream_name":     stream_name,
         "section_id":      m.section_id if m else None,
         "section_code":    section_code,
         "section_name":    section_name,
@@ -343,8 +339,8 @@ async def get_student(student_id: int, db: AsyncSession = Depends(get_db)):
     if row is None:
         return Result(code=404, message="Student not found.", extra={}).http_response()
 
-    s, m, class_code, school_group_id, section_code, section_name, group_name, stream_name = row
-    data = _student_row_to_dict(s, m, class_code, school_group_id, section_code, section_name, group_name, stream_name)
+    s, m, class_code, school_group_id, section_code, section_name, group_name = row
+    data = _student_row_to_dict(s, m, class_code, school_group_id, section_code, section_name, group_name)
     data.update({
         "address_line1":       s.address_line1,
         "address_line2":       s.address_line2,
@@ -413,7 +409,7 @@ async def list_students(
 
     data = {
         "total": total, "page": page, "limit": limit,
-        "data": [_student_row_to_dict(s, m, cc, sgid, sc, sn, gn, strn) for s, m, cc, sgid, sc, sn, gn, strn in rows.all()],
+        "data": [_student_row_to_dict(s, m, cc, sgid, sc, sn, gn) for s, m, cc, sgid, sc, sn, gn in rows.all()],
     }
     if total > 0:
         await cache.set(key, data, expire=CACHE_TTL)
@@ -803,183 +799,126 @@ async def transfer_student(
 )
 async def promote_students(
     from_class_id: int = Query(..., description="Class ID to promote students from"),
-    student_streams: Optional[dict[str, int]] = Body(default=None),
     db: AsyncSession = Depends(get_db),
 ):
     today = date.today()
 
     try:
-        class_row = (await db.execute(
+        # 1. Get from_class details
+        from_class = (await db.execute(
             select(
                 SchoolStreamClass.class_id,
                 SchoolStreamClass.class_code,
+                SchoolStreamClass.school_group_id,
                 SchoolStreamClass.school_id,
             ).where(
                 SchoolStreamClass.class_id == from_class_id,
-                SchoolStreamClass.status == "active",
+                SchoolStreamClass.status   == "active",
             )
         )).first()
 
-        if not class_row:
-            return Result(404, "Invalid or inactive class.", {}).http_response()
+        if not from_class:
+            return Result(code=404, message="from_class_id is invalid or inactive.", extra={}).http_response()
 
-        _, current_class_code, school_id = class_row
+        # 2. Auto-find next class — same group, class_code = current + 1
+        try:
+            next_code = str(int(from_class.class_code) + 1)
+        except ValueError:
+            return Result(code=400, message=f"Cannot auto-promote: class_code '{from_class.class_code}' is not numeric.", extra={}).http_response()
 
-        to_class_row = (await db.execute(
+        to_class = (await db.execute(
             select(
                 SchoolStreamClass.class_id,
-                SchoolStreamClass.class_code
-            )
-            .join(
-                ClassPromotionMap,
-                ClassPromotionMap.to_class_id == SchoolStreamClass.class_id
-            )
-            .where(
-                ClassPromotionMap.from_class_id == from_class_id,
-                SchoolStreamClass.school_id == school_id,
-                SchoolStreamClass.status == "active",
+                SchoolStreamClass.class_code,
+            ).where(
+                SchoolStreamClass.school_group_id == from_class.school_group_id,
+                SchoolStreamClass.school_id       == from_class.school_id,
+                SchoolStreamClass.class_code      == next_code,
+                SchoolStreamClass.status          == "active",
             )
         )).first()
 
-        if not to_class_row:
-            return Result(400, "No next class available.", {}).http_response()
+        if not to_class:
+            return Result(code=404, message=f"No next class found with class_code='{next_code}' in the same group.", extra={}).http_response()
 
-        to_class_id, to_class_code = to_class_row
+        to_class_id = to_class.class_id
 
-        is_from_school = current_class_code.isdigit()
-        is_to_inter = not to_class_code.isdigit()
-
-        if is_from_school and is_to_inter and not student_streams:
-            return Result(
-                400,
-                "Stream selection required for promotion to 1st Year.",
-                {}
-            ).http_response()
-
+        # 3. Get all active students in from_class
         rows = (await db.execute(
-            select(
-                StudentClassMapping,
-                SchoolStreamClassSection.section_code,
-            )
-            .join(
-                SchoolStreamClassSection,
-                SchoolStreamClassSection.section_id == StudentClassMapping.section_id,
-                isouter=True,
-            )
-            .where(
-                StudentClassMapping.class_id == from_class_id,
+            select(StudentClassMapping).where(
+                StudentClassMapping.class_id  == from_class_id,
                 StudentClassMapping.is_active == True,
             )
-        )).all()
+        )).scalars().all()
 
         if not rows:
-            return Result(404, "No active students found.", {}).http_response()
+            return Result(code=404, message="No active students found in from_class.", extra={}).http_response()
 
-        section_map = {}
-        default_section_id = None
+        # 4. Get sections of to_class mapped by section_code
+        section_rows = (await db.execute(
+            select(
+                SchoolStreamClassSection.section_id,
+                SchoolStreamClassSection.section_code,
+            ).where(SchoolStreamClassSection.class_id == to_class_id)
+        )).all()
+        section_map        = {r.section_code: r.section_id for r in section_rows}
+        default_section_id = section_rows[0].section_id if section_rows else None
 
-        if not is_to_inter:
-            section_rows = (await db.execute(
+        # 5. Get section_code of each student's current section
+        section_ids = {m.section_id for m in rows if m.section_id}
+        current_section_codes: dict[int, str] = {}
+        if section_ids:
+            sc_rows = (await db.execute(
                 select(
                     SchoolStreamClassSection.section_id,
                     SchoolStreamClassSection.section_code,
-                ).where(
-                    SchoolStreamClassSection.class_id == to_class_id
-                )
+                ).where(SchoolStreamClassSection.section_id.in_(section_ids))
             )).all()
+            current_section_codes = {r.section_id: r.section_code for r in sc_rows}
 
-            section_map = {r.section_code: r.section_id for r in section_rows}
-            default_section_id = section_rows[0].section_id if section_rows else None
-
+        # 6. Promote each student
         new_records = []
-        to_deactivate = []
-        skipped_students = []
+        skipped     = []
 
-        for mapping, section_code in rows:
-            student_id = mapping.student_id
+        for mapping in rows:
+            section_code   = current_section_codes.get(mapping.section_id)
+            new_section_id = section_map.get(section_code) if section_code else None
+            if not new_section_id:
+                new_section_id = default_section_id
 
-            if not is_to_inter:
-                new_section_id = section_map.get(section_code) or default_section_id
+            if not new_section_id:
+                skipped.append({"student_id": mapping.student_id, "reason": "no_section_in_to_class"})
+                continue
 
-                if not new_section_id:
-                    skipped_students.append({
-                        "student_id": student_id,
-                        "reason": "no_section_in_next_class"
-                    })
-                    continue
-
-                new_records.append(StudentClassMapping(
-                    student_id=student_id,
-                    class_id=to_class_id,
-                    section_id=new_section_id,
-                    stream_id=None,
-                    valid_from_date=today,
-                    is_active=True,
-                    status="active",
-                ))
-
-            elif is_from_school and is_to_inter:
-                stream_id = (student_streams or {}).get(str(student_id))
-
-                if not stream_id:
-                    skipped_students.append({
-                        "student_id": student_id,
-                        "reason": "stream_not_provided"
-                    })
-                    continue
-
-                new_records.append(StudentClassMapping(
-                    student_id=student_id,
-                    class_id=to_class_id,
-                    section_id=None,
-                    stream_id=stream_id,
-                    valid_from_date=today,
-                    is_active=True,
-                    status="active",
-                ))
-
-            else:
-                if not mapping.stream_id:
-                    skipped_students.append({
-                        "student_id": student_id,
-                        "reason": "missing_stream"
-                    })
-                    continue
-
-                new_records.append(StudentClassMapping(
-                    student_id=student_id,
-                    class_id=to_class_id,
-                    section_id=None,
-                    stream_id=mapping.stream_id,
-                    valid_from_date=today,
-                    is_active=True,
-                    status="active",
-                ))
-
-            to_deactivate.append(mapping)
-
-        for mapping in to_deactivate:
-            mapping.is_active = False
-            mapping.status = "inactive"
+            mapping.is_active     = False
+            mapping.status        = "inactive"
             mapping.valid_to_date = today
+
+            new_records.append(StudentClassMapping(
+                student_id=mapping.student_id,
+                class_id=to_class_id,
+                section_id=new_section_id,
+                enroll_date=mapping.enroll_date,
+                valid_from_date=today,
+                is_active=True,
+                status="active",
+            ))
 
         db.add_all(new_records)
         await db.commit()
 
-        await cache.delete_pattern(f"student:list:{from_class_id}:*")
+        await cache.delete_pattern("student:list:*")
+        await cache.delete_pattern("student:dropdown:*")
 
-        # 8. Response
-        return Result(
-            200,
-            "Students promoted successfully.",
-            {
-                "from_class_id": from_class_id,
-                "to_class_id": to_class_id,
-                "total_promoted": len(new_records),
-                "skipped_students": skipped_students,
-            },
-        ).http_response()
+        return Result(code=200, message="Students promoted successfully.", extra={
+            "from_class_id":   from_class_id,
+            "from_class_code": from_class.class_code,
+            "to_class_id":     to_class_id,
+            "to_class_code":   to_class.class_code,
+            "total_promoted":  len(new_records),
+            "skipped":         skipped,
+        }).http_response()
 
     except Exception as e:
         await db.rollback()
-        return Result(500, str(e), {}).http_response()
+        return Result(code=500, message=str(e), extra={}).http_response()

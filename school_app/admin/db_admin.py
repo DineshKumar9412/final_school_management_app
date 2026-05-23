@@ -198,7 +198,7 @@ class StudentMarksAdmin(ModelView, model=StudentMarks):
     name                 = "Student Marks"
     name_plural          = "Student Marks"
     icon                 = "fa-solid fa-percent"
-    column_list          = [StudentMarks.id, StudentMarks.student_id, StudentMarks.class_id, StudentMarks.section_id, StudentMarks.subject_id, StudentMarks.mark]
+    column_list          = [StudentMarks.id, StudentMarks.student_id, StudentMarks.class_id, StudentMarks.section_id, StudentMarks.subject_id, StudentMarks.exam_id, StudentMarks.online_exam_id, StudentMarks.mark]
     column_sortable_list   = [StudentMarks.id, StudentMarks.student_id]
 
 

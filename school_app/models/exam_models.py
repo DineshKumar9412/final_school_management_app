@@ -53,14 +53,16 @@ class ExamTimetable(Base):
 class StudentMarks(Base):
     __tablename__ = "student_marks"
 
-    id:         Mapped[int]          = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    student_id: Mapped[int]          = mapped_column(BigInteger, ForeignKey("student.student_id", name="fk_mark_stu_id"), nullable=False)
-    class_id:   Mapped[int]          = mapped_column(BigInteger, ForeignKey("school_stream_class.class_id", name="fk_mark_class"), nullable=False)
-    section_id: Mapped[int | None]   = mapped_column(BigInteger, ForeignKey("school_stream_class_section.section_id", ondelete="SET NULL"), nullable=True)
-    subject_id: Mapped[int]          = mapped_column(BigInteger, ForeignKey("school_stream_subject.subject_id", name="fk_mark_sub_id"), nullable=False)
-    mark:       Mapped[float | None] = mapped_column(DECIMAL(18, 2))
-    created_at: Mapped[datetime]     = mapped_column(DateTime, server_default=func.current_timestamp(), nullable=False)
-    updated_at: Mapped[datetime]     = mapped_column(DateTime, server_default=func.current_timestamp(), onupdate=func.current_timestamp(), nullable=False)
+    id:             Mapped[int]          = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    exam_id:        Mapped[int | None]   = mapped_column(BigInteger, ForeignKey("exams.exam_id", ondelete="SET NULL", name="fk_mark_exam_id"), nullable=True)
+    online_exam_id: Mapped[int | None]   = mapped_column(BigInteger, ForeignKey("on_exam.id", ondelete="SET NULL", name="fk_mark_online_exam_id"), nullable=True)
+    student_id:     Mapped[int]          = mapped_column(BigInteger, ForeignKey("student.student_id", name="fk_mark_stu_id"), nullable=False)
+    class_id:       Mapped[int]          = mapped_column(BigInteger, ForeignKey("school_stream_class.class_id", name="fk_mark_class"), nullable=False)
+    section_id:     Mapped[int | None]   = mapped_column(BigInteger, ForeignKey("school_stream_class_section.section_id", ondelete="SET NULL"), nullable=True)
+    subject_id:     Mapped[int]          = mapped_column(BigInteger, ForeignKey("school_stream_subject.subject_id", name="fk_mark_sub_id"), nullable=False)
+    mark:           Mapped[float | None] = mapped_column(DECIMAL(18, 2))
+    created_at:     Mapped[datetime]     = mapped_column(DateTime, server_default=func.current_timestamp(), nullable=False)
+    updated_at:     Mapped[datetime]     = mapped_column(DateTime, server_default=func.current_timestamp(), onupdate=func.current_timestamp(), nullable=False)
 
 
 class OnlineExam(Base):

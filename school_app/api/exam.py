@@ -348,7 +348,14 @@ async def create_marks(payload: StudentMarksCreate, db: AsyncSession = Depends(g
     if existing:
         return Result(code=409, message=f"Marks already exist for subjects: {list(existing)}.", extra={}).http_response()
 
-    marks = [StudentMarks(student_id=payload.student_id, class_id=payload.class_id, subject_id=s.subject_id, mark=s.mark) for s in payload.subjects]
+    marks = [StudentMarks(
+        student_id=payload.student_id,
+        class_id=payload.class_id,
+        subject_id=s.subject_id,
+        mark=s.mark,
+        exam_id=payload.exam_id,
+        online_exam_id=payload.online_exam_id,
+    ) for s in payload.subjects]
     db.add_all(marks)
     await db.commit()
 
@@ -358,36 +365,182 @@ async def create_marks(payload: StudentMarksCreate, db: AsyncSession = Depends(g
 
 @exam_router.get("/marks/list", summary="Get student marks")
 async def list_marks(
-    student_id: int           = Query(...),
-    class_id:   Optional[int] = Query(None),
-    subject_id: Optional[int] = Query(None),
-    search:     Optional[str] = Query(None),
-    page:       int           = Query(1,  ge=1),
-    limit:      int           = Query(10, ge=1, le=100),
+    student_id:     int           = Query(...),
+    class_id:       Optional[int] = Query(None),
+    section_id:     Optional[int] = Query(None),
+    subject_id:     Optional[int] = Query(None),
+    exam_id:        Optional[int] = Query(None, description="Filter by offline exam ID"),
+    online_exam_id: Optional[int] = Query(None, description="Filter by online exam ID"),
+    page:           int           = Query(1,  ge=1),
+    limit:          int           = Query(10, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    key = f"marks:student:{student_id}:{class_id}:{subject_id}:{search}:{page}:{limit}"
+    key = f"marks:student:{student_id}:{class_id}:{section_id}:{subject_id}:{exam_id}:{online_exam_id}:{page}:{limit}"
     cached = await cache.get(key)
     if cached:
         return Result(code=200, message="Marks fetched successfully (cache).", extra=cached).http_response()
 
-    stmt = select(StudentMarks).where(StudentMarks.student_id == student_id)
-    if class_id:   stmt = stmt.where(StudentMarks.class_id   == class_id)
-    if subject_id: stmt = stmt.where(StudentMarks.subject_id == subject_id)
-    if search and search.isdigit():
-        stmt = stmt.where(StudentMarks.subject_id == int(search))
+    stmt = (
+        select(
+            StudentMarks,
+            Exam.exam_name,
+            OnlineExam.title.label("online_exam_title"),
+        )
+        .where(StudentMarks.student_id == student_id)
+        .outerjoin(Exam,       Exam.exam_id  == StudentMarks.exam_id)
+        .outerjoin(OnlineExam, OnlineExam.id == StudentMarks.online_exam_id)
+    )
 
-    total  = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
+    if class_id:       stmt = stmt.where(StudentMarks.class_id       == class_id)
+    if section_id:     stmt = stmt.where(StudentMarks.section_id     == section_id)
+    if subject_id:     stmt = stmt.where(StudentMarks.subject_id     == subject_id)
+    if exam_id:        stmt = stmt.where(StudentMarks.exam_id        == exam_id)
+    if online_exam_id: stmt = stmt.where(StudentMarks.online_exam_id == online_exam_id)
+
+    total  = (await db.execute(select(func.count(StudentMarks.id)).where(StudentMarks.student_id == student_id))).scalar_one()
     offset = (page - 1) * limit
-    rows   = (await db.execute(stmt.order_by(StudentMarks.subject_id).offset(offset).limit(limit))).scalars().all()
+    rows   = (await db.execute(stmt.order_by(StudentMarks.subject_id).offset(offset).limit(limit))).all()
 
     data = {
         "total": total, "page": page, "limit": limit,
-        "data": [{"id": m.id, "student_id": m.student_id, "class_id": m.class_id, "subject_id": m.subject_id, "mark": float(m.mark) if m.mark is not None else None} for m in rows],
+        "data": [
+            {
+                "id":                m.id,
+                "student_id":        m.student_id,
+                "class_id":          m.class_id,
+                "section_id":        m.section_id,
+                "subject_id":        m.subject_id,
+                "exam_id":           m.exam_id,
+                "exam_name":         exam_name,
+                "online_exam_id":    m.online_exam_id,
+                "online_exam_title": online_exam_title,
+                "exam_type":         "online" if m.online_exam_id else "offline" if m.exam_id else None,
+                "mark":              float(m.mark) if m.mark is not None else None,
+            }
+            for m, exam_name, online_exam_title in rows
+        ],
     }
     if total > 0:
         await cache.set(key, data, expire=CACHE_TTL)
     return Result(code=200, message="Marks fetched successfully.", extra=data).http_response()
+
+
+@exam_router.get("/marks/offline/list", summary="Get student offline exam marks")
+async def list_offline_marks(
+    student_id: int           = Query(...),
+    class_id:   Optional[int] = Query(None),
+    section_id: Optional[int] = Query(None),
+    subject_id: Optional[int] = Query(None),
+    exam_id:    Optional[int] = Query(None),
+    page:       int           = Query(1,  ge=1),
+    limit:      int           = Query(10, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    key = f"marks:offline:{student_id}:{class_id}:{section_id}:{subject_id}:{exam_id}:{page}:{limit}"
+    cached = await cache.get(key)
+    if cached:
+        return Result(code=200, message="Offline marks fetched successfully (cache).", extra=cached).http_response()
+
+    stmt = (
+        select(StudentMarks, Exam.exam_name)
+        .outerjoin(Exam, Exam.exam_id == StudentMarks.exam_id)
+        .where(
+            StudentMarks.student_id == student_id,
+            StudentMarks.exam_id.isnot(None),
+            StudentMarks.online_exam_id.is_(None),
+        )
+    )
+    if class_id:   stmt = stmt.where(StudentMarks.class_id   == class_id)
+    if section_id: stmt = stmt.where(StudentMarks.section_id == section_id)
+    if subject_id: stmt = stmt.where(StudentMarks.subject_id == subject_id)
+    if exam_id:    stmt = stmt.where(StudentMarks.exam_id    == exam_id)
+
+    total  = (await db.execute(select(func.count(StudentMarks.id)).where(
+        StudentMarks.student_id == student_id,
+        StudentMarks.exam_id.isnot(None),
+        StudentMarks.online_exam_id.is_(None),
+    ))).scalar_one()
+    offset = (page - 1) * limit
+    rows   = (await db.execute(stmt.order_by(StudentMarks.subject_id).offset(offset).limit(limit))).all()
+
+    data = {
+        "total": total, "page": page, "limit": limit,
+        "data": [
+            {
+                "id":         m.id,
+                "student_id": m.student_id,
+                "class_id":   m.class_id,
+                "section_id": m.section_id,
+                "subject_id": m.subject_id,
+                "exam_id":    m.exam_id,
+                "exam_name":  exam_name,
+                "mark":       float(m.mark) if m.mark is not None else None,
+            }
+            for m, exam_name in rows
+        ],
+    }
+    if total > 0:
+        await cache.set(key, data, expire=CACHE_TTL)
+    return Result(code=200, message="Offline marks fetched successfully.", extra=data).http_response()
+
+
+@exam_router.get("/marks/online/list", summary="Get student online exam marks")
+async def list_online_marks(
+    student_id:     int           = Query(...),
+    class_id:       Optional[int] = Query(None),
+    section_id:     Optional[int] = Query(None),
+    subject_id:     Optional[int] = Query(None),
+    online_exam_id: Optional[int] = Query(None),
+    page:           int           = Query(1,  ge=1),
+    limit:          int           = Query(10, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    key = f"marks:online:{student_id}:{class_id}:{section_id}:{subject_id}:{online_exam_id}:{page}:{limit}"
+    cached = await cache.get(key)
+    if cached:
+        return Result(code=200, message="Online marks fetched successfully (cache).", extra=cached).http_response()
+
+    stmt = (
+        select(StudentMarks, OnlineExam.title.label("online_exam_title"))
+        .outerjoin(OnlineExam, OnlineExam.id == StudentMarks.online_exam_id)
+        .where(
+            StudentMarks.student_id == student_id,
+            StudentMarks.online_exam_id.isnot(None),
+            StudentMarks.exam_id.is_(None),
+        )
+    )
+    if class_id:       stmt = stmt.where(StudentMarks.class_id       == class_id)
+    if section_id:     stmt = stmt.where(StudentMarks.section_id     == section_id)
+    if subject_id:     stmt = stmt.where(StudentMarks.subject_id     == subject_id)
+    if online_exam_id: stmt = stmt.where(StudentMarks.online_exam_id == online_exam_id)
+
+    total  = (await db.execute(select(func.count(StudentMarks.id)).where(
+        StudentMarks.student_id == student_id,
+        StudentMarks.online_exam_id.isnot(None),
+        StudentMarks.exam_id.is_(None),
+    ))).scalar_one()
+    offset = (page - 1) * limit
+    rows   = (await db.execute(stmt.order_by(StudentMarks.subject_id).offset(offset).limit(limit))).all()
+
+    data = {
+        "total": total, "page": page, "limit": limit,
+        "data": [
+            {
+                "id":                m.id,
+                "student_id":        m.student_id,
+                "class_id":          m.class_id,
+                "section_id":        m.section_id,
+                "subject_id":        m.subject_id,
+                "online_exam_id":    m.online_exam_id,
+                "online_exam_title": online_exam_title,
+                "mark":              float(m.mark) if m.mark is not None else None,
+            }
+            for m, online_exam_title in rows
+        ],
+    }
+    if total > 0:
+        await cache.set(key, data, expire=CACHE_TTL)
+    return Result(code=200, message="Online marks fetched successfully.", extra=data).http_response()
 
 
 # ══════════════════════════════════════════════

@@ -40,13 +40,13 @@ def _row_to_dict(r: EmpLeaveRequest, emp_name: str | None) -> dict:
         "emp_id":         r.emp_id,
         "emp_name":       emp_name,
         "reason":         r.reason,
-        "from_dt":        r.from_dt.isoformat(),
-        "to_date":        r.to_date.isoformat(),
+        "from_dt":        r.from_dt.isoformat() if r.from_dt else None,
+        "to_date":        r.to_date.isoformat() if r.to_date else None,
         "type":           r.type.value if r.type else None,
         "status":         r.status.value if r.status else None,
         "has_attachment": r.attachments is not None,
-        "created_at":     r.created_at.isoformat(),
-        "updated_at":     r.updated_at.isoformat(),
+        "created_at":     r.created_at.isoformat() if r.created_at else None,
+        "updated_at":     r.updated_at.isoformat() if r.updated_at else None,
     }
 
 
@@ -147,7 +147,9 @@ async def list_leave_requests(
 
     offset = (page - 1) * limit
     stmt   = select(EmpLeaveRequest)
-    if search:
+
+    # apply joins and filters
+    if search or emp_id is not None or status is not None or leave_type is not None or from_dt is not None or to_date is not None:
         stmt = stmt.outerjoin(Employee, Employee.id == EmpLeaveRequest.emp_id)
 
     if emp_id is not None:
@@ -170,7 +172,30 @@ async def list_leave_requests(
             )
         )
 
-    total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
+    count_stmt = select(func.count(EmpLeaveRequest.id)).select_from(EmpLeaveRequest)
+    if search or emp_id is not None or status is not None or leave_type is not None or from_dt is not None or to_date is not None:
+        count_stmt = count_stmt.outerjoin(Employee, Employee.id == EmpLeaveRequest.emp_id)
+    if emp_id is not None:
+        count_stmt = count_stmt.where(EmpLeaveRequest.emp_id == emp_id)
+    if status is not None:
+        count_stmt = count_stmt.where(EmpLeaveRequest.status == status)
+    if leave_type is not None:
+        count_stmt = count_stmt.where(EmpLeaveRequest.type == leave_type)
+    if from_dt is not None:
+        count_stmt = count_stmt.where(EmpLeaveRequest.from_dt >= from_dt)
+    if to_date is not None:
+        count_stmt = count_stmt.where(EmpLeaveRequest.to_date <= to_date)
+    if search:
+        count_stmt = count_stmt.where(
+            or_(
+                EmpLeaveRequest.reason.like(f"%{search}%"),
+                Employee.first_name.like(f"%{search}%"),
+                Employee.last_name.like(f"%{search}%"),
+                func.concat(Employee.first_name, ' ', Employee.last_name).like(f"%{search}%"),
+            )
+        )
+
+    total = (await db.execute(count_stmt)).scalar_one()
     rows  = (await db.execute(
         stmt.order_by(EmpLeaveRequest.id.desc()).offset(offset).limit(limit)
     )).scalars().all()

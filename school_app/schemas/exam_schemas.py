@@ -110,9 +110,11 @@ class SubjectMark(BaseModel):
 
 
 class StudentMarksCreate(BaseModel):
-    student_id: int
-    class_id:   int
-    subjects:   List[SubjectMark]
+    student_id:     int
+    class_id:       int
+    exam_id:        Optional[int] = None
+    online_exam_id: Optional[int] = None
+    subjects:       List[SubjectMark]
 
     model_config = {
         "json_schema_extra": {
